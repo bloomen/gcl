@@ -1,0 +1,17 @@
+/.settings
+.project
+.cproject
+*~
+/Debug
+/Release
+*.dot
+*.debug
+*.release
+*.dSYM
+CMakeCache.txt
+/CMakeFiles
+Makefile
+cmake_install.cmake
+/build
+/check_build*
+CMakeLists.txt.user
