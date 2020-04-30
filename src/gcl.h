@@ -228,6 +228,8 @@ public:
     virtual const std::vector<iImpl*>& parents() const = 0;
     virtual void visit(const std::function<void(iImpl&)>& f) = 0;
     virtual void unvisit() = 0;
+    virtual bool visited() const = 0;
+    virtual void visited(bool value) = 0;
 };
 
 template<typename F>
@@ -323,6 +325,43 @@ struct BaseTask<Result>::Impl : public iImpl
         m_visited = false;
     }
 
+    bool visited() const override
+    {
+        return m_visited;
+    }
+
+    void visited(const bool value) override
+    {
+        m_visited = value;
+    }
+
+    void visit_breadth_first(const std::function<void(iImpl&)>& f)
+    {
+        std::vector<iImpl*> tasks;
+        std::queue<iImpl*> q;
+        q.emplace(this);
+        tasks.push_back(this);
+        m_visited = true;
+        while (!q.empty())
+        {
+            const auto v = q.front();
+            q.pop();
+            for (const auto w : v->parents())
+            {
+                if (!w->visited())
+                {
+                    q.emplace(w);
+                    tasks.push_back(w);
+                    w->visited(true);
+                }
+            }
+        }
+        for (auto t = tasks.rbegin(); t != tasks.rend(); ++t)
+        {
+            f(**t);
+        }
+    }
+
     bool m_visited = false;
     std::vector<iImpl*> m_parents;
     std::function<void(Executor*)> m_schedule;
@@ -333,28 +372,28 @@ template<typename Result>
 void BaseTask<Result>::schedule()
 {
     m_impl->unvisit();
-    m_impl->visit([](iImpl& i){ i.schedule(); });
+    m_impl->visit_breadth_first([](iImpl& i){ i.schedule(); });
 }
 
 template<typename Result>
 void BaseTask<Result>::schedule(Executor& e)
 {
     m_impl->unvisit();
-    m_impl->visit([&e](iImpl& i){ i.schedule(&e); });
+    m_impl->visit_breadth_first([&e](iImpl& i){ i.schedule(&e); });
 }
 
 template<typename Result>
 void BaseTask<Result>::release()
 {
     m_impl->unvisit();
-    m_impl->visit([](iImpl& i){ i.release(); });
+    m_impl->visit_breadth_first([](iImpl& i){ i.release(); });
 }
 
 template<typename Result>
 void BaseTask<Result>::release(Executor& e)
 {
     m_impl->unvisit();
-    m_impl->visit([&e](iImpl& i){ i.release(&e); });
+    m_impl->visit_breadth_first([&e](iImpl& i){ i.release(&e); });
 }
 
 template<typename Result>
