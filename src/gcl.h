@@ -13,26 +13,26 @@
 namespace gcl
 {
 
-class Executor
+class Exec
 {
 public:
-    virtual ~Executor() = default;
+    virtual ~Exec() = default;
     virtual void execute(const std::function<void()>& f) = 0;
 };
 
-class Sequential : public Executor
+class Seq : public Exec
 {
 public:
     void execute(const std::function<void()>& f) override;
 };
 
-class Parallel : public Executor
+class Par : public Exec
 {
 public:
 
     explicit
-    Parallel(const std::size_t n_threads);
-    ~Parallel();
+    Par(const std::size_t n_threads);
+    ~Par();
 
     void execute(const std::function<void()>& f) override;
 
@@ -63,10 +63,10 @@ class BaseTask
 {
 public:
     void schedule();
-    void schedule(Executor& e);
+    void schedule(Exec& e);
 
     void release();
-    void release(Executor& e);
+    void release(Exec& e);
 
     bool valid() const;
 
@@ -86,9 +86,6 @@ protected:
 
     struct Impl;
     std::shared_ptr<Impl> m_impl;
-
-private:
-    ~BaseTask() = default;
 };
 
 template<typename Result>
@@ -174,19 +171,21 @@ namespace detail
 
 class BaseImpl
 {
-protected:
-    BaseImpl() = default;
+public:
     virtual ~BaseImpl() = default;
 
-    virtual void release(Executor* e = nullptr) = 0;
+    virtual void release(Exec* e = nullptr) = 0;
 
-    void schedule(Executor* e = nullptr);
+    void schedule(Exec* e = nullptr);
     void visit(const std::function<void(BaseImpl&)>& f);
     void unvisit();
     void visit_breadth_first(const std::function<void(BaseImpl&)>& f);
 
+protected:
+    BaseImpl() = default;
+
     bool m_visited = false;
-    std::function<void(Executor*)> m_schedule;
+    std::function<void(Exec*)> m_schedule;
     std::vector<BaseImpl*> m_parents;
 };
 
@@ -229,7 +228,7 @@ struct BaseTask<Result>::Impl : public BaseImpl
             m_parents.emplace_back(detail::get_impl(p));
         }, parents...);
         auto pack_func = std::bind(std::forward<Functor>(functor), std::move(parents)...);
-        m_schedule = [this, pack_func = std::move(pack_func)](Executor* const e)
+        m_schedule = [this, pack_func = std::move(pack_func)](Exec* const e)
         {
             auto pack_task = std::make_shared<std::packaged_task<Result()>>(pack_func);
             m_future = pack_task->get_future();
@@ -244,7 +243,7 @@ struct BaseTask<Result>::Impl : public BaseImpl
         };
     }
 
-    void release(Executor* const e = nullptr) override
+    void release(Exec* const e = nullptr) override
     {
         if (e)
         {
@@ -267,7 +266,7 @@ void BaseTask<Result>::schedule()
 }
 
 template<typename Result>
-void BaseTask<Result>::schedule(Executor& e)
+void BaseTask<Result>::schedule(Exec& e)
 {
     m_impl->unvisit();
     m_impl->visit_breadth_first([&e](BaseImpl& i){ i.schedule(&e); });
@@ -281,7 +280,7 @@ void BaseTask<Result>::release()
 }
 
 template<typename Result>
-void BaseTask<Result>::release(Executor& e)
+void BaseTask<Result>::release(Exec& e)
 {
     m_impl->unvisit();
     m_impl->visit_breadth_first([&e](BaseImpl& i){ i.release(&e); });
@@ -396,7 +395,7 @@ Task<void> schedule(Vec<Result> tasks)
 }
 
 template<typename... Results>
-Task<void> schedule(Executor& exec, Task<Results>... tasks)
+Task<void> schedule(Exec& exec, Task<Results>... tasks)
 {
     auto t = task([](const Task<Results>&... ts){ wait(ts...); }, std::move(tasks)...);
     t.schedule(exec);
@@ -404,7 +403,7 @@ Task<void> schedule(Executor& exec, Task<Results>... tasks)
 }
 
 template<typename Result>
-Task<void> schedule(Executor& exec, Vec<Result> tasks)
+Task<void> schedule(Exec& exec, Vec<Result> tasks)
 {
     auto t = task([](const Vec<Result>& ts){ wait(ts); }, std::move(tasks));
     t.schedule(exec);

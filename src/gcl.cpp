@@ -3,19 +3,19 @@
 namespace gcl
 {
 
-void Sequential::execute(const std::function<void()>& f)
+void Seq::execute(const std::function<void()>& f)
 {
     f();
 }
 
-Parallel::Parallel(const std::size_t n_threads)
+Par::Par(const std::size_t n_threads)
 {
     for (std::size_t i = 0; i < n_threads; ++i)
     {
         std::thread thread;
         try
         {
-            thread = std::thread{&Parallel::worker, this};
+            thread = std::thread{&Par::worker, this};
         }
         catch (...)
         {
@@ -35,12 +35,12 @@ Parallel::Parallel(const std::size_t n_threads)
     }
 }
 
-Parallel::~Parallel()
+Par::~Par()
 {
     shutdown();
 }
 
-void Parallel::execute(const std::function<void()>& f)
+void Par::execute(const std::function<void()>& f)
 {
     if (m_threads.empty())
     {
@@ -56,7 +56,7 @@ void Parallel::execute(const std::function<void()>& f)
     }
 }
 
-void Parallel::worker()
+void Par::worker()
 {
     for (;;)
     {
@@ -78,7 +78,7 @@ void Parallel::worker()
     }
 }
 
-void Parallel::shutdown()
+void Par::shutdown()
 {
     {
         std::lock_guard<std::mutex> lock{m_mutex};
@@ -92,7 +92,7 @@ void Parallel::shutdown()
     m_threads.clear();
 }
 
-void detail::BaseImpl::schedule(Executor* e)
+void detail::BaseImpl::schedule(Exec* e)
 {
     m_schedule(e);
 }
