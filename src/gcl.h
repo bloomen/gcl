@@ -6,6 +6,7 @@
 #include <future>
 #include <memory>
 #include <queue>
+#include <tuple>
 #include <type_traits>
 #include <vector>
 
@@ -183,6 +184,10 @@ public:
     explicit
     Task(Functor&& functor, Task<ParentResults>... parents);
 
+    template<typename Functor, typename ParentResult>
+    explicit
+    Task(Functor&& functor, std::vector<Task<ParentResult>> parents);
+
     const Result& get() const;
 };
 
@@ -194,6 +199,10 @@ public:
     template<typename Functor, typename... ParentResults>
     explicit
     Task(Functor&& functor, Task<ParentResults>... parents);
+
+    template<typename Functor, typename ParentResult>
+    explicit
+    Task(Functor&& functor, std::vector<Task<ParentResult>> parents);
 
     Result& get() const;
 };
@@ -207,13 +216,33 @@ public:
     explicit
     Task(Functor&& functor, Task<ParentResults>... parents);
 
+    template<typename Functor, typename ParentResult>
+    explicit
+    Task(Functor&& functor, std::vector<Task<ParentResult>> parents);
+
     void get() const;
 };
 
+template<typename Result>
+using Vec = std::vector<Task<Result>>;
+
 template<typename Functor, typename... ParentResults>
-auto make_task(Functor&& functor, Task<ParentResults>... parents)
+auto task(Functor&& functor, Task<ParentResults>... parents)
 {
     return Task<decltype(functor(parents...))>{std::forward<Functor>(functor), std::move(parents)...};
+}
+
+template<typename Functor, typename ParentResult>
+auto task(Functor&& functor, Vec<ParentResult> parents)
+{
+    return Task<decltype(functor(parents))>{std::forward<Functor>(functor), std::move(parents)};
+}
+
+template<typename... Result>
+auto vec(Task<Result>... tasks)
+{
+    using ResultType = std::tuple_element_t<0, std::tuple<Result...>>;
+    return Vec<ResultType>{std::move(tasks)...};
 }
 
 namespace detail
@@ -244,18 +273,27 @@ void for_each_impl(const F& f, Arg&& arg, Args&&... args)
     for_each_impl(f, std::forward<Args>(args)...);
 }
 
-template<typename F, typename... Args>
-void for_each(const F& f, Args&&... args)
+template<typename F, typename... Results>
+void for_each(const F& f, const Task<Results>&... tasks)
 {
-    for_each_impl(f, std::forward<Args>(args)...);
+    for_each_impl(f, tasks...);
+}
+
+template<typename F, typename Result>
+void for_each(const F& f, const Vec<Result>& tasks)
+{
+    for (const auto& t : tasks)
+    {
+        f(t);
+    }
 }
 
 template<typename Result>
 struct BaseTask<Result>::Impl : public iImpl
 {
-    template<typename Functor, typename... ParentResults>
+    template<typename Functor, typename... Parents>
     explicit
-    Impl(Functor&& functor, Task<ParentResults>... parents)
+    Impl(Functor&& functor, Parents... parents)
     {
         for_each([this](const auto& p)
         {
@@ -351,7 +389,7 @@ struct BaseTask<Result>::Impl : public iImpl
                 if (!w->visited())
                 {
                     q.emplace(w);
-                    tasks.push_back(w);
+                    tasks.emplace_back(w);
                     w->visited(true);
                 }
             }
@@ -432,6 +470,13 @@ Task<Result>::Task(Functor&& functor, Task<ParentResults>... parents)
 }
 
 template<typename Result>
+template<typename Functor, typename ParentResult>
+Task<Result>::Task(Functor&& functor, Vec<ParentResult> parents)
+{
+    this->m_impl = std::make_shared<typename detail::BaseTask<Result>::Impl>(std::forward<Functor>(functor), std::move(parents));
+}
+
+template<typename Result>
 const Result& Task<Result>::get() const
 {
     return this->m_impl->m_future.get();
@@ -442,6 +487,13 @@ template<typename Functor, typename... ParentResults>
 Task<Result&>::Task(Functor&& functor, Task<ParentResults>... parents)
 {
     this->m_impl = std::make_shared<typename detail::BaseTask<Result&>::Impl>(std::forward<Functor>(functor), std::move(parents)...);
+}
+
+template<typename Result>
+template<typename Functor, typename ParentResult>
+Task<Result&>::Task(Functor&& functor, Vec<ParentResult> parents)
+{
+    this->m_impl = std::make_shared<typename detail::BaseTask<Result&>::Impl>(std::forward<Functor>(functor), std::move(parents));
 }
 
 template<typename Result>
@@ -456,6 +508,12 @@ Task<void>::Task(Functor&& functor, Task<ParentResults>... parents)
     this->m_impl = std::make_shared<typename detail::BaseTask<void>::Impl>(std::forward<Functor>(functor), std::move(parents)...);
 }
 
+template<typename Functor, typename ParentResult>
+Task<void>::Task(Functor&& functor, Vec<ParentResult> parents)
+{
+    this->m_impl = std::make_shared<typename detail::BaseTask<void>::Impl>(std::forward<Functor>(functor), std::move(parents));
+}
+
 inline
 void Task<void>::get() const
 {
@@ -468,10 +526,24 @@ void wait(const Task<Results>&... tasks)
     detail::for_each([](const auto& t){ t.wait(); }, tasks...);
 }
 
+template<typename Result>
+void wait(const Vec<Result>& tasks)
+{
+    detail::for_each([](const auto& t){ t.wait(); }, tasks);
+}
+
 template<typename... Results>
 Task<void> schedule(Task<Results>... tasks)
 {
-    auto t = make_task([](const Task<Results>&... ts){ wait(ts...); }, std::move(tasks)...);
+    auto t = task([](const Task<Results>&... ts){ wait(ts...); }, std::move(tasks)...);
+    t.schedule();
+    return t;
+}
+
+template<typename Result>
+Task<void> schedule(Vec<Result> tasks)
+{
+    auto t = task([](const Vec<Result>& ts){ wait(ts); }, std::move(tasks));
     t.schedule();
     return t;
 }
@@ -479,7 +551,15 @@ Task<void> schedule(Task<Results>... tasks)
 template<typename... Results>
 Task<void> schedule(Executor& exec, Task<Results>... tasks)
 {
-    auto t = make_task([](const Task<Results>&... ts){ wait(ts...); }, std::move(tasks)...);
+    auto t = task([](const Task<Results>&... ts){ wait(ts...); }, std::move(tasks)...);
+    t.schedule(exec);
+    return t;
+}
+
+template<typename Result>
+Task<void> schedule(Executor& exec, Vec<Result> tasks)
+{
+    auto t = task([](const Vec<Result>& ts){ wait(ts); }, std::move(tasks));
     t.schedule(exec);
     return t;
 }
