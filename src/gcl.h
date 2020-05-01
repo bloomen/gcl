@@ -363,9 +363,9 @@ struct BaseTask<Result>::Impl : public iImpl
     }
 
     bool m_visited = false;
-    std::vector<iImpl*> m_parents;
-    std::function<void(Executor*)> m_schedule;
     std::shared_future<Result> m_future;
+    std::function<void(Executor*)> m_schedule;
+    std::vector<iImpl*> m_parents;
 };
 
 template<typename Result>
@@ -466,6 +466,22 @@ template<typename... Results>
 void wait(const Task<Results>&... tasks)
 {
     detail::for_each([](const auto& t){ t.wait(); }, tasks...);
+}
+
+template<typename... Results>
+Task<void> schedule(Task<Results>... tasks)
+{
+    auto t = make_task([](const Task<Results>&... ts){ wait(ts...); }, std::move(tasks)...);
+    t.schedule();
+    return t;
+}
+
+template<typename... Results>
+Task<void> schedule(Executor& exec, Task<Results>... tasks)
+{
+    auto t = make_task([](const Task<Results>&... ts){ wait(ts...); }, std::move(tasks)...);
+    t.schedule(exec);
+    return t;
 }
 
 } // gcl

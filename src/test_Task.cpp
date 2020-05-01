@@ -29,16 +29,21 @@ TEST_CASE("Task_schedule_using_Parallel")
     REQUIRE(55 == t.get());
 }
 
-TEST_CASE("Task_schedule_using_wait")
+TEST_CASE("Task_schedule_using_free_schedule")
 {
-    int x = 0;
-    int y = 0;
-    auto p1 = gcl::make_task([&x]{ x = 42; return x; });
-    auto p2 = gcl::make_task([&y]{ y = 13; return y; });
-    auto t = gcl::make_task(gcl::wait<int, int>, p1, p2);
+    auto p1 = gcl::make_task([]{ return 42; });
+    auto p2 = gcl::make_task([]{ return 13; });
+    gcl::schedule(p1, p2).wait();
+    REQUIRE(42 == p1.get());
+    REQUIRE(13 == p2.get());
+}
+
+TEST_CASE("Task_schedule_using_free_schedule_with_executor")
+{
+    auto p1 = gcl::make_task([]{ return 42; });
+    auto p2 = gcl::make_task([]{ return 13; });
     gcl::Parallel exec{4};
-    t.schedule(exec);
-    t.wait();
-    REQUIRE(42 == x);
-    REQUIRE(13 == y);
+    gcl::schedule(exec, p1, p2).wait();
+    REQUIRE(42 == p1.get());
+    REQUIRE(13 == p2.get());
 }
