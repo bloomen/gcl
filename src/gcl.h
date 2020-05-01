@@ -102,12 +102,10 @@ class Task : public detail::BaseTask<Result>
 public:
 
     template<typename Functor, typename... ParentResults>
-    explicit
-    Task(Functor&& functor, Task<ParentResults>... parents);
+    void init(Functor&& functor, Task<ParentResults>... parents);
 
     template<typename Functor, typename ParentResult>
-    explicit
-    Task(Functor&& functor, std::vector<Task<ParentResult>> parents);
+    void init(Functor&& functor, std::vector<Task<ParentResult>> parents);
 
     const Result& get() const;
 };
@@ -118,12 +116,10 @@ class Task<Result&> : public detail::BaseTask<Result&>
 public:
 
     template<typename Functor, typename... ParentResults>
-    explicit
-    Task(Functor&& functor, Task<ParentResults>... parents);
+    void init(Functor&& functor, Task<ParentResults>... parents);
 
     template<typename Functor, typename ParentResult>
-    explicit
-    Task(Functor&& functor, std::vector<Task<ParentResult>> parents);
+    void init(Functor&& functor, std::vector<Task<ParentResult>> parents);
 
     Result& get() const;
 };
@@ -134,12 +130,10 @@ class Task<void> : public detail::BaseTask<void>
 public:
 
     template<typename Functor, typename... ParentResults>
-    explicit
-    Task(Functor&& functor, Task<ParentResults>... parents);
+    void init(Functor&& functor, Task<ParentResults>... parents);
 
     template<typename Functor, typename ParentResult>
-    explicit
-    Task(Functor&& functor, std::vector<Task<ParentResult>> parents);
+    void init(Functor&& functor, std::vector<Task<ParentResult>> parents);
 
     void get() const;
 };
@@ -150,13 +144,17 @@ using Vec = std::vector<Task<Result>>;
 template<typename Functor, typename... ParentResults>
 auto task(Functor&& functor, Task<ParentResults>... parents)
 {
-    return Task<decltype(functor(parents...))>{std::forward<Functor>(functor), std::move(parents)...};
+    Task<decltype(functor(parents...))> t;
+    t.init(std::forward<Functor>(functor), std::move(parents)...);
+    return t;
 }
 
 template<typename Functor, typename ParentResult>
 auto task(Functor&& functor, Vec<ParentResult> parents)
 {
-    return Task<decltype(functor(parents))>{std::forward<Functor>(functor), std::move(parents)};
+    Task<decltype(functor(parents))> t;
+    t.init(std::forward<Functor>(functor), std::move(parents));
+    return t;
 }
 
 template<typename... Result>
@@ -316,14 +314,14 @@ std::future_status BaseTask<Result>::wait_until(const std::chrono::time_point<Cl
 
 template<typename Result>
 template<typename Functor, typename... ParentResults>
-Task<Result>::Task(Functor&& functor, Task<ParentResults>... parents)
+void Task<Result>::init(Functor&& functor, Task<ParentResults>... parents)
 {
     this->m_impl = std::make_shared<typename detail::BaseTask<Result>::Impl>(std::forward<Functor>(functor), std::move(parents)...);
 }
 
 template<typename Result>
 template<typename Functor, typename ParentResult>
-Task<Result>::Task(Functor&& functor, Vec<ParentResult> parents)
+void Task<Result>::init(Functor&& functor, Vec<ParentResult> parents)
 {
     this->m_impl = std::make_shared<typename detail::BaseTask<Result>::Impl>(std::forward<Functor>(functor), std::move(parents));
 }
@@ -336,14 +334,14 @@ const Result& Task<Result>::get() const
 
 template<typename Result>
 template<typename Functor, typename... ParentResults>
-Task<Result&>::Task(Functor&& functor, Task<ParentResults>... parents)
+void Task<Result&>::init(Functor&& functor, Task<ParentResults>... parents)
 {
     this->m_impl = std::make_shared<typename detail::BaseTask<Result&>::Impl>(std::forward<Functor>(functor), std::move(parents)...);
 }
 
 template<typename Result>
 template<typename Functor, typename ParentResult>
-Task<Result&>::Task(Functor&& functor, Vec<ParentResult> parents)
+void Task<Result&>::init(Functor&& functor, Vec<ParentResult> parents)
 {
     this->m_impl = std::make_shared<typename detail::BaseTask<Result&>::Impl>(std::forward<Functor>(functor), std::move(parents));
 }
@@ -355,13 +353,13 @@ Result& Task<Result&>::get() const
 }
 
 template<typename Functor, typename... ParentResults>
-Task<void>::Task(Functor&& functor, Task<ParentResults>... parents)
+void Task<void>::init(Functor&& functor, Task<ParentResults>... parents)
 {
     this->m_impl = std::make_shared<typename detail::BaseTask<void>::Impl>(std::forward<Functor>(functor), std::move(parents)...);
 }
 
 template<typename Functor, typename ParentResult>
-Task<void>::Task(Functor&& functor, Vec<ParentResult> parents)
+void Task<void>::init(Functor&& functor, Vec<ParentResult> parents)
 {
     this->m_impl = std::make_shared<typename detail::BaseTask<void>::Impl>(std::forward<Functor>(functor), std::move(parents));
 }
