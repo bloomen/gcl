@@ -3,19 +3,14 @@
 namespace gcl
 {
 
-void Seq::execute(const std::function<void()>& f)
-{
-    f();
-}
-
-Par::Par(const std::size_t n_threads)
+Async::Async(const std::size_t n_threads)
 {
     for (std::size_t i = 0; i < n_threads; ++i)
     {
         std::thread thread;
         try
         {
-            thread = std::thread{&Par::worker, this};
+            thread = std::thread{&Async::worker, this};
         }
         catch (...)
         {
@@ -35,12 +30,12 @@ Par::Par(const std::size_t n_threads)
     }
 }
 
-Par::~Par()
+Async::~Async()
 {
     shutdown();
 }
 
-void Par::execute(const std::function<void()>& f)
+void Async::execute(const std::function<void()>& f)
 {
     if (m_threads.empty())
     {
@@ -56,7 +51,7 @@ void Par::execute(const std::function<void()>& f)
     }
 }
 
-void Par::worker()
+void Async::worker()
 {
     for (;;)
     {
@@ -78,7 +73,7 @@ void Par::worker()
     }
 }
 
-void Par::shutdown()
+void Async::shutdown()
 {
     {
         std::lock_guard<std::mutex> lock{m_mutex};

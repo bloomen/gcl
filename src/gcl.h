@@ -20,19 +20,13 @@ public:
     virtual void execute(const std::function<void()>& f) = 0;
 };
 
-class Seq : public Exec
-{
-public:
-    void execute(const std::function<void()>& f) override;
-};
-
-class Par : public Exec
+class Async : public Exec
 {
 public:
 
     explicit
-    Par(const std::size_t n_threads);
-    ~Par();
+    Async(const std::size_t n_threads);
+    ~Async();
 
     void execute(const std::function<void()>& f) override;
 

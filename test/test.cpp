@@ -20,43 +20,23 @@ TEST_CASE("schedule_with_vec_parents")
     REQUIRE(55 == t.get());
 }
 
-TEST_CASE("schedule_using_Sequential")
+TEST_CASE("schedule_using_Async")
 {
     auto p1 = gcl::task([]{ return 42; });
     auto p2 = gcl::task([]{ return 13; });
     auto t = gcl::task([](gcl::Task<int> p1, gcl::Task<int> p2){ return p1.get() + p2.get(); }, p1, p2);
-    gcl::Seq exec;
-    t.schedule(exec);
+    gcl::Async async{4};
+    t.schedule(async);
     REQUIRE(55 == t.get());
 }
 
-TEST_CASE("schedule_using_Sequential_with_vec_parents")
-{
-    auto p1 = gcl::task([]{ return 42; });
-    auto p2 = gcl::task([]{ return 13; });
-    auto t = gcl::task([](gcl::Vec<int> p){ return p[0].get() + p[1].get(); }, gcl::vec(p1, p2));
-    gcl::Seq exec;
-    t.schedule(exec);
-    REQUIRE(55 == t.get());
-}
-
-TEST_CASE("schedule_using_Parallel")
+TEST_CASE("schedule_using_Async_with_vec_parents")
 {
     auto p1 = gcl::task([]{ return 42; });
     auto p2 = gcl::task([]{ return 13; });
     auto t = gcl::task([](gcl::Task<int> p1, gcl::Task<int> p2){ return p1.get() + p2.get(); }, p1, p2);
-    gcl::Par exec{4};
-    t.schedule(exec);
-    REQUIRE(55 == t.get());
-}
-
-TEST_CASE("schedule_using_Parallel_with_vec_parents")
-{
-    auto p1 = gcl::task([]{ return 42; });
-    auto p2 = gcl::task([]{ return 13; });
-    auto t = gcl::task([](gcl::Task<int> p1, gcl::Task<int> p2){ return p1.get() + p2.get(); }, p1, p2);
-    gcl::Par exec{4};
-    t.schedule(exec);
+    gcl::Async async{4};
+    t.schedule(async);
     REQUIRE(55 == t.get());
 }
 
@@ -78,22 +58,22 @@ TEST_CASE("schedule_using_free_schedule_with_vec_parents")
     REQUIRE(13 == p2.get());
 }
 
-TEST_CASE("schedule_using_free_schedule_with_executor")
+TEST_CASE("schedule_using_free_schedule_with_async")
 {
     auto p1 = gcl::task([]{ return 42; });
     auto p2 = gcl::task([]{ return 13; });
-    gcl::Par exec{4};
-    gcl::schedule(exec, p1, p2).wait();
+    gcl::Async async{4};
+    gcl::schedule(async, p1, p2).wait();
     REQUIRE(42 == p1.get());
     REQUIRE(13 == p2.get());
 }
 
-TEST_CASE("schedule_using_free_schedule_with_executor_with_vec_parents")
+TEST_CASE("schedule_using_free_schedule_with_async_with_vec_parents")
 {
     auto p1 = gcl::task([]{ return 42; });
     auto p2 = gcl::task([]{ return 13; });
-    gcl::Par exec{4};
-    gcl::schedule(exec, gcl::vec(p1, p2)).wait();
+    gcl::Async async{4};
+    gcl::schedule(async, gcl::vec(p1, p2)).wait();
     REQUIRE(42 == p1.get());
     REQUIRE(13 == p2.get());
 }
