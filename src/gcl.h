@@ -136,7 +136,7 @@ template<typename Result>
 using Vec = std::vector<Task<Result>>;
 
 template<typename Functor, typename... ParentResults>
-auto task(Functor&& functor, Task<ParentResults>... parents)
+auto task(Functor&& functor, Task<ParentResults>... parents) -> Task<decltype(functor(parents...))>
 {
     Task<decltype(functor(parents...))> t;
     t.init(std::forward<Functor>(functor), std::move(parents)...);
@@ -144,7 +144,7 @@ auto task(Functor&& functor, Task<ParentResults>... parents)
 }
 
 template<typename Functor, typename ParentResult>
-auto task(Functor&& functor, Vec<ParentResult> parents)
+auto task(Functor&& functor, Vec<ParentResult> parents) -> Task<decltype(functor(parents))>
 {
     Task<decltype(functor(parents))> t;
     t.init(std::forward<Functor>(functor), std::move(parents));
@@ -152,14 +152,16 @@ auto task(Functor&& functor, Vec<ParentResult> parents)
 }
 
 template<typename... Result>
-auto vec(Task<Result>... tasks)
+auto vec(Task<Result>... tasks) -> Vec<typename std::tuple_element<0, std::tuple<Result...>>::type>
 {
-    using ResultType = std::tuple_element_t<0, std::tuple<Result...>>;
+    using ResultType = typename std::tuple_element<0, std::tuple<Result...>>::type;
     return Vec<ResultType>{std::move(tasks)...};
 }
 
 namespace detail
 {
+
+struct CollectParents;
 
 class BaseImpl
 {
@@ -175,6 +177,8 @@ public:
 
 protected:
     BaseImpl() = default;
+
+    friend struct CollectParents;
 
     bool m_visited = false;
     std::function<void(Exec*)> m_schedule;
@@ -208,6 +212,25 @@ void for_each(const F& f, const Vec<Result>& tasks)
     }
 }
 
+struct CollectParents
+{
+    BaseImpl* i;
+    template<typename T>
+    void operator()(const T& p) const
+    {
+        i->m_parents.emplace_back(detail::get_impl(p));
+    }
+};
+
+struct Waiter
+{
+    template<typename T>
+    void operator()(const T& t) const
+    {
+        t.wait();
+    }
+};
+
 template<typename Result>
 struct BaseTask<Result>::Impl : public BaseImpl
 {
@@ -215,12 +238,10 @@ struct BaseTask<Result>::Impl : public BaseImpl
     explicit
     Impl(Functor&& functor, Parents... parents)
     {
-        for_each([this](const auto& p)
-        {
-            m_parents.emplace_back(detail::get_impl(p));
-        }, parents...);
-        auto pack_func = std::bind(std::forward<Functor>(functor), std::move(parents)...);
-        m_schedule = [this, pack_func = std::move(pack_func)](Exec* const e)
+        for_each(CollectParents{this}, parents...);
+        // todo: make more efficient
+        std::function<Result()> pack_func = std::bind(std::forward<Functor>(functor), std::move(parents)...);
+        m_schedule = std::bind([this](std::function<Result()> pack_func, Exec* const e)
         {
             auto pack_task = std::make_shared<std::packaged_task<Result()>>(pack_func);
             m_future = pack_task->get_future();
@@ -232,7 +253,7 @@ struct BaseTask<Result>::Impl : public BaseImpl
             {
                 (*pack_task)();
             }
-        };
+        }, std::move(pack_func), std::placeholders::_1);
     }
 
     void release(Exec* const e = nullptr) override
@@ -361,13 +382,13 @@ void Task<void>::init(Functor&& functor, Vec<ParentResult> parents)
 template<typename... Results>
 void wait(const Task<Results>&... tasks)
 {
-    detail::for_each([](const auto& t){ t.wait(); }, tasks...);
+    detail::for_each(detail::Waiter{}, tasks...);
 }
 
 template<typename Result>
 void wait(const Vec<Result>& tasks)
 {
-    detail::for_each([](const auto& t){ t.wait(); }, tasks);
+    detail::for_each(detail::Waiter{}, tasks);
 }
 
 template<typename... Results>
