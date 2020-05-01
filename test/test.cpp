@@ -1,4 +1,6 @@
-#include "test.h"
+#define CATCH_CONFIG_MAIN
+#include "catch.hpp"
+#include "gcl.h"
 
 TEST_CASE("schedule")
 {

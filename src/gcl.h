@@ -23,10 +23,7 @@ public:
 class Sequential : public Executor
 {
 public:
-    void execute(const std::function<void()>& f) override
-    {
-        f();
-    }
+    void execute(const std::function<void()>& f) override;
 };
 
 class Parallel : public Executor
@@ -34,91 +31,14 @@ class Parallel : public Executor
 public:
 
     explicit
-    Parallel(const std::size_t n_threads)
-    {
-        for (std::size_t i = 0; i < n_threads; ++i)
-        {
-            std::thread thread;
-            try
-            {
-                thread = std::thread{&Parallel::worker, this};
-            }
-            catch (...)
-            {
-                shutdown();
-                throw;
-            }
-            try
-            {
-                m_threads.emplace_back(std::move(thread));
-            }
-            catch (...)
-            {
-                shutdown();
-                thread.join();
-                throw;
-            }
-        }
-    }
+    Parallel(const std::size_t n_threads);
+    ~Parallel();
 
-    ~Parallel()
-    {
-        shutdown();
-    }
-
-    void execute(const std::function<void()>& f) override
-    {
-        if (m_threads.empty())
-        {
-            f();
-        }
-        else
-        {
-            {
-                std::lock_guard<std::mutex> lock{m_mutex};
-                m_functors.push(f);
-            }
-            m_cond_var.notify_one();
-        }
-    }
+    void execute(const std::function<void()>& f) override;
 
 private:
-
-    void worker()
-    {
-        for (;;)
-        {
-            std::function<void()> f;
-            {
-                std::unique_lock<std::mutex> lock{m_mutex};
-                m_cond_var.wait(lock, [this]
-                {
-                    return m_done || !m_functors.empty();
-                });
-                if (m_done && m_functors.empty())
-                {
-                    break;
-                }
-                f = std::move(m_functors.front());
-                m_functors.pop();
-            }
-            f();
-        }
-    }
-
-    void shutdown()
-    {
-        {
-            std::lock_guard<std::mutex> lock{m_mutex};
-            m_done = true;
-        }
-        m_cond_var.notify_all();
-        for (std::thread& thread : m_threads)
-        {
-            thread.join();
-        }
-        m_threads.clear();
-    }
+    void worker();
+    void shutdown();
 
     bool m_done = false;
     std::vector<std::thread> m_threads;
@@ -130,19 +50,18 @@ private:
 namespace detail
 {
 
-class iImpl;
+class BaseImpl;
 
 template<typename Result>
 class BaseTask;
 
 template<typename Result>
-iImpl* get_impl(const BaseTask<Result>& t);
+BaseImpl* get_impl(const BaseTask<Result>& t);
 
 template<typename Result>
 class BaseTask
 {
 public:
-
     void schedule();
     void schedule(Executor& e);
 
@@ -160,15 +79,20 @@ public:
     std::future_status wait_until(const std::chrono::time_point<Clock, Duration>& tp) const;
 
 protected:
+    BaseTask() = default;
+
     template<typename R>
-    friend iImpl* get_impl(const BaseTask<R>& t);
+    friend BaseImpl* get_impl(const BaseTask<R>& t);
 
     struct Impl;
     std::shared_ptr<Impl> m_impl;
+
+private:
+    ~BaseTask() = default;
 };
 
 template<typename Result>
-iImpl* get_impl(const BaseTask<Result>& t)
+BaseImpl* get_impl(const BaseTask<Result>& t)
 {
     return t.m_impl.get();
 }
@@ -248,17 +172,22 @@ auto vec(Task<Result>... tasks)
 namespace detail
 {
 
-class iImpl
+class BaseImpl
 {
-public:
-    virtual ~iImpl() = default;
-    virtual void schedule(Executor* e = nullptr) = 0;
+protected:
+    BaseImpl() = default;
+    virtual ~BaseImpl() = default;
+
     virtual void release(Executor* e = nullptr) = 0;
-    virtual const std::vector<iImpl*>& parents() const = 0;
-    virtual void visit(const std::function<void(iImpl&)>& f) = 0;
-    virtual void unvisit() = 0;
-    virtual bool visited() const = 0;
-    virtual void visited(bool value) = 0;
+
+    void schedule(Executor* e = nullptr);
+    void visit(const std::function<void(BaseImpl&)>& f);
+    void unvisit();
+    void visit_breadth_first(const std::function<void(BaseImpl&)>& f);
+
+    bool m_visited = false;
+    std::function<void(Executor*)> m_schedule;
+    std::vector<BaseImpl*> m_parents;
 };
 
 template<typename F>
@@ -289,7 +218,7 @@ void for_each(const F& f, const Vec<Result>& tasks)
 }
 
 template<typename Result>
-struct BaseTask<Result>::Impl : public iImpl
+struct BaseTask<Result>::Impl : public BaseImpl
 {
     template<typename Functor, typename... Parents>
     explicit
@@ -300,7 +229,7 @@ struct BaseTask<Result>::Impl : public iImpl
             m_parents.emplace_back(detail::get_impl(p));
         }, parents...);
         auto pack_func = std::bind(std::forward<Functor>(functor), std::move(parents)...);
-        m_schedule = [this, pack_func = std::move(pack_func)](Executor* e)
+        m_schedule = [this, pack_func = std::move(pack_func)](Executor* const e)
         {
             auto pack_task = std::make_shared<std::packaged_task<Result()>>(pack_func);
             m_future = pack_task->get_future();
@@ -315,12 +244,7 @@ struct BaseTask<Result>::Impl : public iImpl
         };
     }
 
-    void schedule(Executor* e = nullptr) override
-    {
-        m_schedule(e);
-    }
-
-    void release(Executor* e = nullptr) override
+    void release(Executor* const e = nullptr) override
     {
         if (e)
         {
@@ -332,106 +256,35 @@ struct BaseTask<Result>::Impl : public iImpl
         }
     }
 
-    const std::vector<iImpl*>& parents() const override
-    {
-        return m_parents;
-    }
-
-    void visit(const std::function<void(iImpl&)>& f) override
-    {
-        if (m_visited)
-        {
-            return;
-        }
-        for (auto p : m_parents)
-        {
-            p->visit(f);
-        }
-        f(*this);
-    }
-
-    void unvisit() override
-    {
-        if (!m_visited)
-        {
-            return;
-        }
-        for (auto p : m_parents)
-        {
-            p->unvisit();
-        }
-        m_visited = false;
-    }
-
-    bool visited() const override
-    {
-        return m_visited;
-    }
-
-    void visited(const bool value) override
-    {
-        m_visited = value;
-    }
-
-    void visit_breadth_first(const std::function<void(iImpl&)>& f)
-    {
-        std::vector<iImpl*> tasks;
-        std::queue<iImpl*> q;
-        q.emplace(this);
-        tasks.push_back(this);
-        m_visited = true;
-        while (!q.empty())
-        {
-            const auto v = q.front();
-            q.pop();
-            for (const auto w : v->parents())
-            {
-                if (!w->visited())
-                {
-                    q.emplace(w);
-                    tasks.emplace_back(w);
-                    w->visited(true);
-                }
-            }
-        }
-        for (auto t = tasks.rbegin(); t != tasks.rend(); ++t)
-        {
-            f(**t);
-        }
-    }
-
-    bool m_visited = false;
     std::shared_future<Result> m_future;
-    std::function<void(Executor*)> m_schedule;
-    std::vector<iImpl*> m_parents;
 };
 
 template<typename Result>
 void BaseTask<Result>::schedule()
 {
     m_impl->unvisit();
-    m_impl->visit_breadth_first([](iImpl& i){ i.schedule(); });
+    m_impl->visit_breadth_first([](BaseImpl& i){ i.schedule(); });
 }
 
 template<typename Result>
 void BaseTask<Result>::schedule(Executor& e)
 {
     m_impl->unvisit();
-    m_impl->visit_breadth_first([&e](iImpl& i){ i.schedule(&e); });
+    m_impl->visit_breadth_first([&e](BaseImpl& i){ i.schedule(&e); });
 }
 
 template<typename Result>
 void BaseTask<Result>::release()
 {
     m_impl->unvisit();
-    m_impl->visit_breadth_first([](iImpl& i){ i.release(); });
+    m_impl->visit_breadth_first([](BaseImpl& i){ i.release(); });
 }
 
 template<typename Result>
 void BaseTask<Result>::release(Executor& e)
 {
     m_impl->unvisit();
-    m_impl->visit_breadth_first([&e](iImpl& i){ i.release(&e); });
+    m_impl->visit_breadth_first([&e](BaseImpl& i){ i.release(&e); });
 }
 
 template<typename Result>
@@ -512,12 +365,6 @@ template<typename Functor, typename ParentResult>
 Task<void>::Task(Functor&& functor, Vec<ParentResult> parents)
 {
     this->m_impl = std::make_shared<typename detail::BaseTask<void>::Impl>(std::forward<Functor>(functor), std::move(parents));
-}
-
-inline
-void Task<void>::get() const
-{
-    m_impl->m_future.get();
 }
 
 template<typename... Results>
