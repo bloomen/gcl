@@ -34,12 +34,11 @@ private:
 namespace detail
 {
 
+struct CollectParents;
+
 template<typename Result>
 class BaseTask
 {
-protected:
-    struct Impl;
-
 public:
     void schedule();
     void schedule(Exec& e);
@@ -57,10 +56,10 @@ public:
     template<typename Clock, typename Duration>
     std::future_status wait_until(const std::chrono::time_point<Clock, Duration>& tp) const;
 
-    Impl& get_impl() const;
-
 protected:
     BaseTask() = default;
+    friend struct CollectParents;
+    struct Impl;
     std::shared_ptr<Impl> m_impl;
 };
 
@@ -112,7 +111,7 @@ template<typename Result>
 using Vec = std::vector<Task<Result>>;
 
 template<typename Functor, typename... ParentResults>
-auto task(Functor&& functor, Task<ParentResults>... parents) -> Task<decltype(functor(parents...))>
+auto task(Functor&& functor, Task<ParentResults>... parents)
 {
     Task<decltype(functor(parents...))> t;
     t.init(std::forward<Functor>(functor), std::move(parents)...);
@@ -120,7 +119,7 @@ auto task(Functor&& functor, Task<ParentResults>... parents) -> Task<decltype(fu
 }
 
 template<typename Functor, typename ParentResult>
-auto task(Functor&& functor, Vec<ParentResult> parents) -> Task<decltype(functor(parents))>
+auto task(Functor&& functor, Vec<ParentResult> parents)
 {
     Task<decltype(functor(parents))> t;
     t.init(std::forward<Functor>(functor), std::move(parents));
@@ -128,7 +127,7 @@ auto task(Functor&& functor, Vec<ParentResult> parents) -> Task<decltype(functor
 }
 
 template<typename... Result>
-auto vec(Task<Result>... tasks) -> Vec<typename std::tuple_element<0, std::tuple<Result...>>::type>
+auto vec(Task<Result>... tasks)
 {
     using ResultType = typename std::tuple_element<0, std::tuple<Result...>>::type;
     return Vec<ResultType>{std::move(tasks)...};
@@ -190,16 +189,7 @@ struct CollectParents
     template<typename P>
     void operator()(const P& p) const
     {
-        impl->add_parent(p.get_impl());
-    }
-};
-
-struct Waiter
-{
-    template<typename T>
-    void operator()(const T& t) const
-    {
-        t.wait();
+        impl->add_parent(*p.m_impl);
     }
 };
 
@@ -211,8 +201,8 @@ struct BaseTask<Result>::Impl : public BaseImpl
     Impl(Functor&& functor, Parents... parents)
     {
         for_each(CollectParents{this}, parents...);
-        std::function<Result()> func = std::bind(std::forward<Functor>(functor), std::move(parents)...);
-        m_schedule = std::bind([this](std::function<Result()> func, Exec* const e)
+        auto func = std::bind(std::forward<Functor>(functor), std::move(parents)...);
+        m_schedule = [this, func = std::move(func)](Exec* const e)
         {
             auto package = std::make_shared<std::packaged_task<Result()>>(func);
             m_future = package->get_future();
@@ -224,7 +214,7 @@ struct BaseTask<Result>::Impl : public BaseImpl
             {
                 (*package)();
             }
-        }, std::move(func), std::placeholders::_1);
+        };
     }
 
     void release(Exec* const e = nullptr) override
@@ -296,12 +286,6 @@ std::future_status BaseTask<Result>::wait_until(const std::chrono::time_point<Cl
     return m_impl->m_future.wait_until(tp);
 }
 
-template<typename Result>
-typename BaseTask<Result>::Impl& BaseTask<Result>::get_impl() const
-{
-    return *m_impl;
-}
-
 } // detail
 
 template<typename Result>
@@ -359,13 +343,13 @@ void Task<void>::init(Functor&& functor, Vec<ParentResult> parents)
 template<typename... Results>
 void wait(const Task<Results>&... tasks)
 {
-    detail::for_each(detail::Waiter{}, tasks...);
+    detail::for_each([](const auto& t){ t.wait(); }, tasks...);
 }
 
 template<typename Result>
 void wait(const Vec<Result>& tasks)
 {
-    detail::for_each(detail::Waiter{}, tasks);
+    detail::for_each([](const auto& t){ t.wait(); }, tasks);
 }
 
 template<typename... Results>
