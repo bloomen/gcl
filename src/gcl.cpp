@@ -10,7 +10,8 @@ namespace gcl
 
 struct Async::Impl
 {
-    Impl(const std::size_t n_threads)
+    Impl(Async& async, const std::size_t n_threads)
+        : m_async{async}
     {
         for (std::size_t i = 0; i < n_threads; ++i)
         {
@@ -42,17 +43,18 @@ struct Async::Impl
         shutdown();
     }
 
-    void execute(const std::function<void()>& f)
+    void execute(Callable* f)
     {
         if (m_threads.empty())
         {
-            f();
+            f->call();
+            m_async.release(f);
         }
         else
         {
             {
                 std::lock_guard<std::mutex> lock{m_mutex};
-                m_functors.push(f);
+                m_functors.emplace(std::move(f));
             }
             m_cond_var.notify_one();
         }
@@ -62,7 +64,7 @@ struct Async::Impl
     {
         for (;;)
         {
-            std::function<void()> f;
+            Callable* f;
             {
                 std::unique_lock<std::mutex> lock{m_mutex};
                 m_cond_var.wait(lock, [this]
@@ -73,10 +75,11 @@ struct Async::Impl
                 {
                     break;
                 }
-                f = std::move(m_functors.front());
+                f = m_functors.front();
                 m_functors.pop();
             }
-            f();
+            f->call();
+            m_async.release(f);
         }
     }
 
@@ -95,20 +98,21 @@ struct Async::Impl
     }
 
 private:
+    Async& m_async;
     bool m_done = false;
     std::vector<std::thread> m_threads;
-    std::queue<std::function<void()>> m_functors;
+    std::queue<Callable*> m_functors;
     std::condition_variable m_cond_var;
     std::mutex m_mutex;
 };
 
 Async::Async(const std::size_t n_threads)
-    : m_impl{new Impl{n_threads}}
+    : m_impl{new Impl{*this, n_threads}}
 {}
 
 Async::~Async() = default;
 
-void Async::execute(const std::function<void()>& f)
+void Async::execute(Callable* f)
 {
     if (m_impl)
     {
@@ -116,8 +120,14 @@ void Async::execute(const std::function<void()>& f)
     }
     else
     {
-        f();
+        f->call();
+        release(f);
     }
+}
+
+void Async::release(Callable* f)
+{
+    delete f;
 }
 
 void detail::BaseImpl::schedule(Exec* e)

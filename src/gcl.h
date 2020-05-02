@@ -11,11 +11,19 @@
 namespace gcl
 {
 
+class Callable
+{
+public:
+    virtual ~Callable() = default;
+    virtual void call() = 0;
+};
+
 class Exec
 {
 public:
     virtual ~Exec() = default;
-    virtual void execute(const std::function<void()>& f) = 0;
+    virtual void execute(Callable* f) = 0;
+    virtual void release(Callable* f) = 0;
 };
 
 class Async : public Exec
@@ -25,7 +33,8 @@ public:
     explicit
     Async(const std::size_t n_threads);
     ~Async();
-    void execute(const std::function<void()>& f) override;
+    void execute(Callable* f) override;
+    void release(Callable* f) override;
 private:
     struct Impl;
     std::unique_ptr<Impl> m_impl;
@@ -229,28 +238,50 @@ struct BaseTask<Result>::Impl : public BaseImpl
     Impl(Functor&& functor, Parents... parents)
     {
         for_each(CollectParents{this}, parents...);
-        // todo: make more efficient
-        std::function<Result()> pack_func = std::bind(std::forward<Functor>(functor), std::move(parents)...);
-        m_schedule = std::bind([this](std::function<Result()> pack_func, Exec* const e)
+        std::function<Result()> func = std::bind(std::forward<Functor>(functor), std::move(parents)...);
+        m_schedule = std::bind([this](std::function<Result()> func, Exec* const e)
         {
-            auto pack_task = std::make_shared<std::packaged_task<Result()>>(pack_func);
-            m_future = pack_task->get_future();
+            using Package = std::packaged_task<Result()>;
+            Package package{func};
+            m_future = package.get_future();
             if (e)
             {
-                e->execute([pack_task]{ (*pack_task)(); });
+                struct C : Callable
+                {
+                    C(Package&& p)
+                        : p{std::move(p)}
+                    {}
+                    Package p;
+                    void call() override
+                    {
+                        p();
+                    }
+                };
+                e->execute(new C{std::move(package)});
             }
             else
             {
-                (*pack_task)();
+                package();
             }
-        }, std::move(pack_func), std::placeholders::_1);
+        }, std::move(func), std::placeholders::_1);
     }
 
     void release(Exec* const e = nullptr) override
     {
         if (e)
         {
-            e->execute([this]{ m_future = {}; });
+            struct C : Callable
+            {
+                C(BaseTask<Result>::Impl* impl)
+                    : impl{impl}
+                {}
+                BaseTask<Result>::Impl* impl;
+                void call() override
+                {
+                    impl->m_future = {};
+                }
+            };
+            e->execute(new C{this});
         }
         else
         {
