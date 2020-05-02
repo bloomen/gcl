@@ -1,90 +1,123 @@
 #include "gcl.h"
 
+#include <condition_variable>
+#include <mutex>
+#include <queue>
+#include <thread>
+
 namespace gcl
 {
 
-Async::Async(const std::size_t n_threads)
+struct Async::Impl
 {
-    for (std::size_t i = 0; i < n_threads; ++i)
+    Impl(const std::size_t n_threads)
     {
-        std::thread thread;
-        try
+        for (std::size_t i = 0; i < n_threads; ++i)
         {
-            thread = std::thread{&Async::worker, this};
-        }
-        catch (...)
-        {
-            shutdown();
-            throw;
-        }
-        try
-        {
-            m_threads.emplace_back(std::move(thread));
-        }
-        catch (...)
-        {
-            shutdown();
-            thread.join();
-            throw;
+            std::thread thread;
+            try
+            {
+                thread = std::thread{&Impl::worker, this};
+            }
+            catch (...)
+            {
+                shutdown();
+                throw;
+            }
+            try
+            {
+                m_threads.emplace_back(std::move(thread));
+            }
+            catch (...)
+            {
+                shutdown();
+                thread.join();
+                throw;
+            }
         }
     }
-}
 
-Async::~Async()
-{
-    shutdown();
-}
-
-void Async::execute(const std::function<void()>& f)
-{
-    if (m_threads.empty())
+    ~Impl()
     {
-        f();
+        shutdown();
     }
-    else
+
+    void execute(const std::function<void()>& f)
+    {
+        if (m_threads.empty())
+        {
+            f();
+        }
+        else
+        {
+            {
+                std::lock_guard<std::mutex> lock{m_mutex};
+                m_functors.push(f);
+            }
+            m_cond_var.notify_one();
+        }
+    }
+
+    void worker()
+    {
+        for (;;)
+        {
+            std::function<void()> f;
+            {
+                std::unique_lock<std::mutex> lock{m_mutex};
+                m_cond_var.wait(lock, [this]
+                {
+                    return m_done || !m_functors.empty();
+                });
+                if (m_done && m_functors.empty())
+                {
+                    break;
+                }
+                f = std::move(m_functors.front());
+                m_functors.pop();
+            }
+            f();
+        }
+    }
+
+    void shutdown()
     {
         {
             std::lock_guard<std::mutex> lock{m_mutex};
-            m_functors.push(f);
+            m_done = true;
         }
-        m_cond_var.notify_one();
-    }
-}
-
-void Async::worker()
-{
-    for (;;)
-    {
-        std::function<void()> f;
+        m_cond_var.notify_all();
+        for (std::thread& thread : m_threads)
         {
-            std::unique_lock<std::mutex> lock{m_mutex};
-            m_cond_var.wait(lock, [this]
-            {
-                return m_done || !m_functors.empty();
-            });
-            if (m_done && m_functors.empty())
-            {
-                break;
-            }
-            f = std::move(m_functors.front());
-            m_functors.pop();
+            thread.join();
         }
+        m_threads.clear();
+    }
+
+private:
+    bool m_done = false;
+    std::vector<std::thread> m_threads;
+    std::queue<std::function<void()>> m_functors;
+    std::condition_variable m_cond_var;
+    std::mutex m_mutex;
+};
+
+Async::Async(const std::size_t n_threads)
+    : m_impl{new Impl{n_threads}}
+{}
+
+Async::~Async() = default;
+
+void Async::execute(const std::function<void()>& f)
+{
+    if (m_impl)
+    {
+        m_impl->execute(f);
+    }
+    else
+    {
         f();
     }
-}
-
-void Async::shutdown()
-{
-    {
-        std::lock_guard<std::mutex> lock{m_mutex};
-        m_done = true;
-    }
-    m_cond_var.notify_all();
-    for (std::thread& thread : m_threads)
-    {
-        thread.join();
-    }
-    m_threads.clear();
 }
 
 void detail::BaseImpl::schedule(Exec* e)

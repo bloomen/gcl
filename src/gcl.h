@@ -1,11 +1,9 @@
 #pragma once
 
 #include <chrono>
-#include <condition_variable>
 #include <functional>
 #include <future>
 #include <memory>
-#include <queue>
 #include <tuple>
 #include <type_traits>
 #include <vector>
@@ -23,22 +21,14 @@ public:
 class Async : public Exec
 {
 public:
-
+    Async() = default;
     explicit
     Async(const std::size_t n_threads);
     ~Async();
-
     void execute(const std::function<void()>& f) override;
-
 private:
-    void worker();
-    void shutdown();
-
-    bool m_done = false;
-    std::vector<std::thread> m_threads;
-    std::queue<std::function<void()>> m_functors;
-    std::condition_variable m_cond_var;
-    std::mutex m_mutex;
+    struct Impl;
+    std::unique_ptr<Impl> m_impl;
 };
 
 namespace detail
