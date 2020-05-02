@@ -34,17 +34,12 @@ private:
 namespace detail
 {
 
-class BaseImpl;
-
-template<typename Result>
-class BaseTask;
-
-template<typename Result>
-BaseImpl* get_impl(const BaseTask<Result>& t);
-
 template<typename Result>
 class BaseTask
 {
+protected:
+    struct Impl;
+
 public:
     void schedule();
     void schedule(Exec& e);
@@ -62,21 +57,12 @@ public:
     template<typename Clock, typename Duration>
     std::future_status wait_until(const std::chrono::time_point<Clock, Duration>& tp) const;
 
+    Impl& get_impl() const;
+
 protected:
     BaseTask() = default;
-
-    template<typename R>
-    friend BaseImpl* get_impl(const BaseTask<R>& t);
-
-    struct Impl;
     std::shared_ptr<Impl> m_impl;
 };
-
-template<typename Result>
-BaseImpl* get_impl(const BaseTask<Result>& t)
-{
-    return t.m_impl.get();
-}
 
 } // detail
 
@@ -151,8 +137,6 @@ auto vec(Task<Result>... tasks) -> Vec<typename std::tuple_element<0, std::tuple
 namespace detail
 {
 
-struct CollectParents;
-
 class BaseImpl
 {
 public:
@@ -164,12 +148,10 @@ public:
     void visit(const std::function<void(BaseImpl&)>& f);
     void unvisit();
     void visit_breadth_first(const std::function<void(BaseImpl&)>& f);
+    void add_parent(BaseImpl& impl);
 
 protected:
     BaseImpl() = default;
-
-    friend struct CollectParents;
-
     bool m_visited = false;
     std::function<void(Exec*)> m_schedule;
     std::vector<BaseImpl*> m_parents;
@@ -204,11 +186,11 @@ void for_each(const F& f, const Vec<Result>& tasks)
 
 struct CollectParents
 {
-    BaseImpl* i;
-    template<typename T>
-    void operator()(const T& p) const
+    BaseImpl* impl;
+    template<typename P>
+    void operator()(const P& p) const
     {
-        i->m_parents.emplace_back(detail::get_impl(p));
+        impl->add_parent(p.get_impl());
     }
 };
 
@@ -312,6 +294,12 @@ template<typename Clock, typename Duration>
 std::future_status BaseTask<Result>::wait_until(const std::chrono::time_point<Clock, Duration>& tp) const
 {
     return m_impl->m_future.wait_until(tp);
+}
+
+template<typename Result>
+typename BaseTask<Result>::Impl& BaseTask<Result>::get_impl() const
+{
+    return *m_impl;
 }
 
 } // detail
