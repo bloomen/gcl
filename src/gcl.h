@@ -11,6 +11,7 @@
 namespace gcl
 {
 
+// Executor interface for scheduling tasks
 class Exec
 {
 public:
@@ -18,6 +19,7 @@ public:
     virtual void execute(std::function<void()> f) = 0;
 };
 
+// Async executor for parallel execution
 class Async : public Exec
 {
 public:
@@ -65,6 +67,7 @@ protected:
 
 } // detail
 
+// The task type for general result types
 template<typename Result>
 class Task : public detail::BaseTask<Result>
 {
@@ -79,6 +82,7 @@ public:
     const Result& get() const;
 };
 
+// The task type for reference result types
 template<typename Result>
 class Task<Result&> : public detail::BaseTask<Result&>
 {
@@ -93,6 +97,7 @@ public:
     Result& get() const;
 };
 
+// The task type for void result
 template<>
 class Task<void> : public detail::BaseTask<void>
 {
@@ -107,9 +112,11 @@ public:
     void get() const;
 };
 
+// Vector to hold multiple tasks of the same type
 template<typename Result>
 using Vec = std::vector<Task<Result>>;
 
+// Creates a new task with parents of potentially different types
 template<typename Functor, typename... ParentResults>
 auto task(Functor&& functor, Task<ParentResults>... parents)
 {
@@ -118,6 +125,7 @@ auto task(Functor&& functor, Task<ParentResults>... parents)
     return t;
 }
 
+// Creates a new task with parents of the same type
 template<typename Functor, typename ParentResult>
 auto task(Functor&& functor, Vec<ParentResult> parents)
 {
@@ -126,6 +134,7 @@ auto task(Functor&& functor, Vec<ParentResult> parents)
     return t;
 }
 
+// Creates a new vector of tasks of the same type
 template<typename... Result>
 auto vec(Task<Result>... tasks)
 {
@@ -340,18 +349,21 @@ void Task<void>::init(Functor&& functor, Vec<ParentResult> parents)
     this->m_impl = std::make_shared<typename detail::BaseTask<void>::Impl>(std::forward<Functor>(functor), std::move(parents));
 }
 
+// Waits for all tasks to finish
 template<typename... Results>
 void wait(const Task<Results>&... tasks)
 {
     detail::for_each([](const auto& t){ t.wait(); }, tasks...);
 }
 
+// Waits for all tasks to finish
 template<typename Result>
 void wait(const Vec<Result>& tasks)
 {
     detail::for_each([](const auto& t){ t.wait(); }, tasks);
 }
 
+// Schedules all tasks
 template<typename... Results>
 Task<void> schedule(Task<Results>... tasks)
 {
@@ -360,6 +372,7 @@ Task<void> schedule(Task<Results>... tasks)
     return t;
 }
 
+// Schedules all tasks
 template<typename Result>
 Task<void> schedule(Vec<Result> tasks)
 {
@@ -368,6 +381,7 @@ Task<void> schedule(Vec<Result> tasks)
     return t;
 }
 
+// Schedules all tasks using the given executor
 template<typename... Results>
 Task<void> schedule(Exec& exec, Task<Results>... tasks)
 {
@@ -376,6 +390,7 @@ Task<void> schedule(Exec& exec, Task<Results>... tasks)
     return t;
 }
 
+// Schedules all tasks using the given executor
 template<typename Result>
 Task<void> schedule(Exec& exec, Vec<Result> tasks)
 {
