@@ -11,19 +11,11 @@
 namespace gcl
 {
 
-class Callable
-{
-public:
-    virtual ~Callable() = default;
-    virtual void call() = 0;
-};
-
 class Exec
 {
 public:
     virtual ~Exec() = default;
-    virtual void execute(Callable* f) = 0;
-    virtual void release(Callable* f) = 0;
+    virtual void execute(std::function<void()> f) = 0;
 };
 
 class Async : public Exec
@@ -31,10 +23,9 @@ class Async : public Exec
 public:
     Async() = default;
     explicit
-    Async(const std::size_t n_threads);
+    Async(std::size_t n_threads);
     ~Async();
-    void execute(Callable* f) override;
-    void release(Callable* f) override;
+    void execute(std::function<void()> f) override;
 private:
     struct Impl;
     std::unique_ptr<Impl> m_impl;
@@ -241,27 +232,15 @@ struct BaseTask<Result>::Impl : public BaseImpl
         std::function<Result()> func = std::bind(std::forward<Functor>(functor), std::move(parents)...);
         m_schedule = std::bind([this](std::function<Result()> func, Exec* const e)
         {
-            using Package = std::packaged_task<Result()>;
-            Package package{func};
-            m_future = package.get_future();
+            auto package = std::make_shared<std::packaged_task<Result()>>(func);
+            m_future = package->get_future();
             if (e)
             {
-                struct C : Callable
-                {
-                    C(Package&& p)
-                        : p{std::move(p)}
-                    {}
-                    Package p;
-                    void call() override
-                    {
-                        p();
-                    }
-                };
-                e->execute(new C{std::move(package)});
+                e->execute([package]{ (*package)(); });
             }
             else
             {
-                package();
+                (*package)();
             }
         }, std::move(func), std::placeholders::_1);
     }
@@ -270,18 +249,7 @@ struct BaseTask<Result>::Impl : public BaseImpl
     {
         if (e)
         {
-            struct C : Callable
-            {
-                C(BaseTask<Result>::Impl* impl)
-                    : impl{impl}
-                {}
-                BaseTask<Result>::Impl* impl;
-                void call() override
-                {
-                    impl->m_future = {};
-                }
-            };
-            e->execute(new C{this});
+            e->execute([this]{ m_future = {}; });
         }
         else
         {

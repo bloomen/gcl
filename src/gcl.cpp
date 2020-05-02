@@ -10,8 +10,8 @@ namespace gcl
 
 struct Async::Impl
 {
-    Impl(Async& async, const std::size_t n_threads)
-        : m_async{async}
+    explicit
+    Impl(const std::size_t n_threads)
     {
         for (std::size_t i = 0; i < n_threads; ++i)
         {
@@ -43,12 +43,11 @@ struct Async::Impl
         shutdown();
     }
 
-    void execute(Callable* f)
+    void execute(std::function<void()> f)
     {
         if (m_threads.empty())
         {
-            f->call();
-            m_async.release(f);
+            f();
         }
         else
         {
@@ -64,7 +63,7 @@ struct Async::Impl
     {
         for (;;)
         {
-            Callable* f;
+            std::function<void()> f;
             {
                 std::unique_lock<std::mutex> lock{m_mutex};
                 m_cond_var.wait(lock, [this]
@@ -75,11 +74,10 @@ struct Async::Impl
                 {
                     break;
                 }
-                f = m_functors.front();
+                f = std::move(m_functors.front());
                 m_functors.pop();
             }
-            f->call();
-            m_async.release(f);
+            f();
         }
     }
 
@@ -98,39 +96,32 @@ struct Async::Impl
     }
 
 private:
-    Async& m_async;
     bool m_done = false;
     std::vector<std::thread> m_threads;
-    std::queue<Callable*> m_functors;
+    std::queue<std::function<void()>> m_functors;
     std::condition_variable m_cond_var;
     std::mutex m_mutex;
 };
 
 Async::Async(const std::size_t n_threads)
-    : m_impl{new Impl{*this, n_threads}}
+    : m_impl{new Impl{n_threads}}
 {}
 
 Async::~Async() = default;
 
-void Async::execute(Callable* f)
+void Async::execute(std::function<void()> f)
 {
     if (m_impl)
     {
-        m_impl->execute(f);
+        m_impl->execute(std::move(f));
     }
     else
     {
-        f->call();
-        release(f);
+        f();
     }
 }
 
-void Async::release(Callable* f)
-{
-    delete f;
-}
-
-void detail::BaseImpl::schedule(Exec* e)
+void detail::BaseImpl::schedule(Exec* const e)
 {
     m_schedule(e);
 }
