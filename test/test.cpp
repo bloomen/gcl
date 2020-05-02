@@ -77,3 +77,26 @@ TEST_CASE("schedule_using_free_schedule_with_async_with_vec_parents")
     REQUIRE(42 == p1.get());
     REQUIRE(13 == p2.get());
 }
+
+TEST_CASE("schedule_using_reference_type")
+{
+    int x = 42;
+    auto p = gcl::task([&x]() -> int& { return x; });
+    auto t = gcl::task([](auto p) -> int& { return p.get(); }, p);
+    gcl::Async async{4};
+    t.schedule(async);
+    t.wait();
+    REQUIRE(42 == p.get());
+    REQUIRE(&x == &p.get());
+}
+
+TEST_CASE("schedule_and_release")
+{
+    auto t = gcl::task([]{ return 42; });
+    REQUIRE(!t.valid());
+    t.schedule();
+    REQUIRE(t.valid());
+    REQUIRE(42 == t.get());
+    t.release();
+    REQUIRE(!t.valid());
+}

@@ -46,7 +46,6 @@ public:
     void schedule(Exec& e);
 
     void release();
-    void release(Exec& e);
 
     bool valid() const;
 
@@ -150,7 +149,7 @@ class BaseImpl
 public:
     virtual ~BaseImpl() = default;
 
-    virtual void release(Exec* e = nullptr) = 0;
+    virtual void release() = 0;
 
     void schedule(Exec* e = nullptr);
     void visit(const std::function<void(BaseImpl&)>& f);
@@ -226,16 +225,9 @@ struct BaseTask<Result>::Impl : public BaseImpl
         };
     }
 
-    void release(Exec* const e = nullptr) override
+    void release() override
     {
-        if (e)
-        {
-            e->execute([this]{ m_future = {}; });
-        }
-        else
-        {
-            m_future = {};
-        }
+        m_future = {};
     }
 
     std::shared_future<Result> m_future;
@@ -260,13 +252,6 @@ void BaseTask<Result>::release()
 {
     m_impl->unvisit();
     m_impl->visit_breadth_first([](BaseImpl& i){ i.release(); });
-}
-
-template<typename Result>
-void BaseTask<Result>::release(Exec& e)
-{
-    m_impl->unvisit();
-    m_impl->visit_breadth_first([&e](BaseImpl& i){ i.release(&e); });
 }
 
 template<typename Result>
