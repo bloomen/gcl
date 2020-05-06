@@ -100,3 +100,19 @@ TEST_CASE("schedule_and_release")
     t.release();
     REQUIRE(!t.valid());
 }
+
+TEST_CASE("schedule_a_wide_graph")
+{
+    int x = 0;
+    auto top = gcl::task([&x]{ return x++; });
+    gcl::Vec<int> tasks;
+    for (int i = 0; i < 10; ++i)
+    {
+        auto t1 = gcl::task([&x](auto t){ x++; return t.get(); }, top);
+        auto t2 = gcl::task([&x](auto t){ x++; return t.get(); }, t1);
+        tasks.push_back(t2);
+    }
+    auto bottom = gcl::task([&x](gcl::Vec<int> ts) { x++; gcl::wait(ts); }, tasks);
+    bottom.schedule();
+    REQUIRE(22 == x);
+}

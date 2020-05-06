@@ -11,7 +11,7 @@
 namespace gcl
 {
 
-// Executor interface for scheduling tasks
+// Executor interface for running functions
 class Exec
 {
 public:
