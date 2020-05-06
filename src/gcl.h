@@ -137,7 +137,7 @@ auto task(Functor&& functor, Vec<ParentResult> parents)
 template<typename... Result>
 auto vec(Task<Result>... tasks)
 {
-    using ResultType = typename std::tuple_element<0, std::tuple<Result...>>::type;
+    using ResultType = std::tuple_element_t<0, std::tuple<Result...>>;
     return Vec<ResultType>{std::move(tasks)...};
 }
 
