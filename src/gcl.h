@@ -185,7 +185,7 @@ void for_each(const F& f, const Task<Results>&... tasks)
 template<typename F, typename Result>
 void for_each(const F& f, const Vec<Result>& tasks)
 {
-    for (const auto& t : tasks)
+    for (const Task<Result>& t : tasks)
     {
         f(t);
     }
@@ -347,7 +347,7 @@ void wait(const Task<Results>&... tasks)
 template<typename Result>
 void wait(const Vec<Result>& tasks)
 {
-    detail::for_each([](const auto& t){ t.wait(); }, tasks);
+    detail::for_each([](const Task<Result>& t){ t.wait(); }, tasks);
 }
 
 // Schedules all tasks
