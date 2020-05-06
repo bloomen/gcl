@@ -212,15 +212,17 @@ struct BaseTask<Result>::Impl : public BaseImpl
         auto func = std::bind(std::forward<Functor>(functor), std::move(parents)...);
         m_schedule = [this, func = std::move(func)](Exec* const e)
         {
-            auto package = std::make_shared<std::packaged_task<Result()>>(func);
-            m_future = package->get_future();
             if (e)
             {
-                e->execute([package]{ (*package)(); });
+                auto pkg = std::make_shared<std::packaged_task<Result()>>(func);
+                m_future = pkg->get_future();
+                e->execute([pkg = std::move(pkg)]{ (*pkg)(); });
             }
             else
             {
-                (*package)();
+                std::packaged_task<Result()> pkg{func};
+                m_future = pkg.get_future();
+                pkg();
             }
         };
     }
