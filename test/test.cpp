@@ -100,3 +100,17 @@ TEST_CASE("schedule_a_wide_graph")
     bottom.schedule();
     REQUIRE(22 == x);
 }
+
+TEST_CASE("schedule_with_mixed_parents")
+{
+    int x = 0;
+    auto p1 = gcl::task([&x]{ x++; return 42.0; });
+    auto p2 = gcl::task([&x]{ x++; return 13; });
+    auto p3 = gcl::task([&x]{ x++; return 20; });
+    auto p4 = gcl::task([&x]{ x++; return 21; });
+    auto p6 = gcl::task([&x]{ x++; return std::string{"guan"}; });
+    auto t = gcl::join(p1, p2, gcl::vec(p3, p4), p6);
+    t.schedule();
+    t.wait();
+    REQUIRE(5 == x);
+}

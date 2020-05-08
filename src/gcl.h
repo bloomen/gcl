@@ -143,26 +143,38 @@ void for_each_impl(const F&)
 {
 }
 
-template<typename F, typename Arg, typename... Args>
-void for_each_impl(const F& f, Arg&& arg, Args&&... args)
+template<typename F, typename Result, typename... TaskTypes>
+void for_each_impl(const F& f, const Task<Result>& t, TaskTypes&&... tasks)
 {
-    f(std::forward<Arg>(arg));
-    for_each_impl(f, std::forward<Args>(args)...);
+    f(t);
+    for_each_impl(f, std::forward<TaskTypes>(tasks)...);
 }
 
-template<typename F, typename... Results>
-void for_each(const F& f, const Task<Results>&... tasks)
+template<typename F, typename Result, typename... TaskTypes>
+void for_each_impl(const F& f, Task<Result>&& t, TaskTypes&&... tasks)
 {
-    for_each_impl(f, tasks...);
+    f(std::move(t));
+    for_each_impl(f, std::forward<TaskTypes>(tasks)...);
 }
 
-template<typename F, typename Result>
-void for_each(const F& f, const Vec<Result>& tasks)
+template<typename F, typename Result, typename... TaskTypes>
+void for_each_impl(const F& f, const Vec<Result>& ts, TaskTypes&&... tasks)
 {
-    for (const Task<Result>& t : tasks)
-    {
-        f(t);
-    }
+    for (const Task<Result>& t : ts) f(t);
+    for_each_impl(f, std::forward<TaskTypes>(tasks)...);
+}
+
+template<typename F, typename Result, typename... TaskTypes>
+void for_each_impl(const F& f, Vec<Result>&& ts, TaskTypes&&... tasks)
+{
+    for (Task<Result>&& t : ts) f(std::move(t));
+    for_each_impl(f, std::forward<TaskTypes>(tasks)...);
+}
+
+template<typename F, typename... TaskTypes>
+void for_each(const F& f, TaskTypes&&... tasks)
+{
+    for_each_impl(f, std::forward<TaskTypes>(tasks)...);
 }
 
 struct CollectParents
