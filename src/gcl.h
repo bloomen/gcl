@@ -42,6 +42,10 @@ template<typename Result>
 class BaseTask
 {
 public:
+
+    template<typename Functor, typename... Parents>
+    void init(Functor&& functor, Parents... parents);
+
     void schedule();
     void schedule(Exec& e);
 
@@ -71,13 +75,6 @@ template<typename Result>
 class Task : public detail::BaseTask<Result>
 {
 public:
-
-    template<typename Functor, typename... ParentResults>
-    void init(Functor&& functor, Task<ParentResults>... parents);
-
-    template<typename Functor, typename ParentResult>
-    void init(Functor&& functor, std::vector<Task<ParentResult>> parents);
-
     const Result& get() const;
 };
 
@@ -86,13 +83,6 @@ template<typename Result>
 class Task<Result&> : public detail::BaseTask<Result&>
 {
 public:
-
-    template<typename Functor, typename... ParentResults>
-    void init(Functor&& functor, Task<ParentResults>... parents);
-
-    template<typename Functor, typename ParentResult>
-    void init(Functor&& functor, std::vector<Task<ParentResult>> parents);
-
     Result& get() const;
 };
 
@@ -101,13 +91,6 @@ template<>
 class Task<void> : public detail::BaseTask<void>
 {
 public:
-
-    template<typename Functor, typename... ParentResults>
-    void init(Functor&& functor, Task<ParentResults>... parents);
-
-    template<typename Functor, typename ParentResult>
-    void init(Functor&& functor, std::vector<Task<ParentResult>> parents);
-
     void get() const;
 };
 
@@ -115,21 +98,12 @@ public:
 template<typename Result>
 using Vec = std::vector<Task<Result>>;
 
-// Creates a new task with parents of potentially different types
-template<typename Functor, typename... ParentResults>
-auto task(Functor&& functor, Task<ParentResults>... parents)
+// Creates a new task where parents can be Task and/or Vec
+template<typename Functor, typename... Parents>
+auto task(Functor&& functor, Parents... parents)
 {
     Task<decltype(functor(parents...))> t;
     t.init(std::forward<Functor>(functor), std::move(parents)...);
-    return t;
-}
-
-// Creates a new task with parents of the same type
-template<typename Functor, typename ParentResult>
-auto task(Functor&& functor, Vec<ParentResult> parents)
-{
-    Task<decltype(functor(parents))> t;
-    t.init(std::forward<Functor>(functor), std::move(parents));
     return t;
 }
 
@@ -236,6 +210,13 @@ struct BaseTask<Result>::Impl : public BaseImpl
 };
 
 template<typename Result>
+template<typename Functor, typename... Parents>
+void BaseTask<Result>::init(Functor&& functor, Parents... parents)
+{
+    m_impl = std::make_shared<Impl>(std::forward<Functor>(functor), std::move(parents)...);
+}
+
+template<typename Result>
 void BaseTask<Result>::schedule()
 {
     m_impl->unvisit();
@@ -285,37 +266,9 @@ std::future_status BaseTask<Result>::wait_until(const std::chrono::time_point<Cl
 } // detail
 
 template<typename Result>
-template<typename Functor, typename... ParentResults>
-void Task<Result>::init(Functor&& functor, Task<ParentResults>... parents)
-{
-    this->m_impl = std::make_shared<typename detail::BaseTask<Result>::Impl>(std::forward<Functor>(functor), std::move(parents)...);
-}
-
-template<typename Result>
-template<typename Functor, typename ParentResult>
-void Task<Result>::init(Functor&& functor, Vec<ParentResult> parents)
-{
-    this->m_impl = std::make_shared<typename detail::BaseTask<Result>::Impl>(std::forward<Functor>(functor), std::move(parents));
-}
-
-template<typename Result>
 const Result& Task<Result>::get() const
 {
     return this->m_impl->m_future.get();
-}
-
-template<typename Result>
-template<typename Functor, typename... ParentResults>
-void Task<Result&>::init(Functor&& functor, Task<ParentResults>... parents)
-{
-    this->m_impl = std::make_shared<typename detail::BaseTask<Result&>::Impl>(std::forward<Functor>(functor), std::move(parents)...);
-}
-
-template<typename Result>
-template<typename Functor, typename ParentResult>
-void Task<Result&>::init(Functor&& functor, Vec<ParentResult> parents)
-{
-    this->m_impl = std::make_shared<typename detail::BaseTask<Result&>::Impl>(std::forward<Functor>(functor), std::move(parents));
 }
 
 template<typename Result>
@@ -324,66 +277,24 @@ Result& Task<Result&>::get() const
     return this->m_impl->m_future.get();
 }
 
-template<typename Functor, typename... ParentResults>
-void Task<void>::init(Functor&& functor, Task<ParentResults>... parents)
+inline
+void Task<void>::get() const
 {
-    this->m_impl = std::make_shared<typename detail::BaseTask<void>::Impl>(std::forward<Functor>(functor), std::move(parents)...);
-}
-
-template<typename Functor, typename ParentResult>
-void Task<void>::init(Functor&& functor, Vec<ParentResult> parents)
-{
-    this->m_impl = std::make_shared<typename detail::BaseTask<void>::Impl>(std::forward<Functor>(functor), std::move(parents));
+    this->m_impl->m_future.get();
 }
 
 // Waits for all tasks to finish
-template<typename... Results>
-void wait(const Task<Results>&... tasks)
+template<typename... TaskTypes>
+void wait(const TaskTypes&... tasks)
 {
     detail::for_each([](const auto& t){ t.wait(); }, tasks...);
 }
 
-// Waits for all tasks to finish
-template<typename Result>
-void wait(const Vec<Result>& tasks)
+// Joins all tasks into a single waiting task
+template<typename... TaskTypes>
+Task<void> join(TaskTypes... tasks)
 {
-    detail::for_each([](const Task<Result>& t){ t.wait(); }, tasks);
-}
-
-// Schedules all tasks
-template<typename... Results>
-Task<void> schedule(Task<Results>... tasks)
-{
-    auto t = task([](const Task<Results>&... ts){ wait(ts...); }, std::move(tasks)...);
-    t.schedule();
-    return t;
-}
-
-// Schedules all tasks
-template<typename Result>
-Task<void> schedule(Vec<Result> tasks)
-{
-    auto t = task([](const Vec<Result>& ts){ wait(ts); }, std::move(tasks));
-    t.schedule();
-    return t;
-}
-
-// Schedules all tasks using the given executor
-template<typename... Results>
-Task<void> schedule(Exec& exec, Task<Results>... tasks)
-{
-    auto t = task([](const Task<Results>&... ts){ wait(ts...); }, std::move(tasks)...);
-    t.schedule(exec);
-    return t;
-}
-
-// Schedules all tasks using the given executor
-template<typename Result>
-Task<void> schedule(Exec& exec, Vec<Result> tasks)
-{
-    auto t = task([](const Vec<Result>& ts){ wait(ts); }, std::move(tasks));
-    t.schedule(exec);
-    return t;
+    return task([](const TaskTypes&... ts){ wait(ts...); }, std::move(tasks)...);
 }
 
 } // gcl

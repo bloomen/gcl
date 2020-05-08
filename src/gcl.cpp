@@ -185,9 +185,4 @@ void detail::BaseImpl::add_parent(BaseImpl& impl)
     m_parents.emplace_back(&impl);
 }
 
-void Task<void>::get() const
-{
-    this->m_impl->m_future.get();
-}
-
 } // gcl
