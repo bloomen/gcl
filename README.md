@@ -8,6 +8,8 @@ Sample usage:
 ```cpp
 auto t1 = gcl::task([]{ return 42; });
 auto t2 = gcl::task([]{ return 13.3; });
+auto t3 = gcl::join(t1, t2);
 gcl::Async async{4};
-gcl::schedule(async, t1, t2).wait();
+t3.schedule(async);
+t3.wait();
 ```
