@@ -34,8 +34,10 @@ private:
     std::unique_ptr<Impl> m_impl;
 };
 
+// The unique id of a task
 using TaskId = std::size_t;
 
+// An edge between tasks
 struct Edge
 {
     TaskId parent;
@@ -55,23 +57,31 @@ public:
     template<typename Functor, typename... Parents>
     void init(Functor&& functor, Parents... parents);
 
+    // Schedules this task and its parents for execution
     void schedule();
     void schedule(Exec& e);
 
+    // Release this task's result and its parents' results
     void release();
 
+    // Returns true if this task contains a valid shared state
     bool valid() const;
 
+    // Waits for the task to finish
     void wait() const;
 
+    // Waits for a given duration `d` for the task to finish
     template<typename Rep, typename Period>
     std::future_status wait_for(const std::chrono::duration<Rep, Period>& d) const;
 
+    // Waits until time `tp` for the task to finish
     template<typename Clock, typename Duration>
     std::future_status wait_until(const std::chrono::time_point<Clock, Duration>& tp) const;
 
+    // Returns the id of the task (unique but changes between runs)
     TaskId id() const;
 
+    // Returns the edges between tasks
     std::vector<Edge> edges() const;
 
 protected:
@@ -88,6 +98,7 @@ template<typename Result>
 class Task : public detail::BaseTask<Result>
 {
 public:
+    // Returns the task's result. May throw
     const Result& get() const;
 };
 
@@ -96,6 +107,7 @@ template<typename Result>
 class Task<Result&> : public detail::BaseTask<Result&>
 {
 public:
+    // Returns the task's result. May throw
     Result& get() const;
 };
 
@@ -104,6 +116,7 @@ template<>
 class Task<void> : public detail::BaseTask<void>
 {
 public:
+    // Returns the task's result. May throw
     void get() const;
 };
 
@@ -322,6 +335,13 @@ void Task<void>::get() const
     this->m_impl->m_future.get();
 }
 
+// Returns a task for releasing the task's result and its parents' results
+template<typename Result>
+Task<void> release(Task<Result> task)
+{
+    return task([](Task<Result> t){ t.release(); }, std::move(task));
+}
+
 // Thrown to cancel an operation
 class Canceled : public std::exception
 {
@@ -349,9 +369,9 @@ private:
 
 // Used to cancel operations. Throws Canceled when token is canceled
 inline
-void cancel_point(const CancelToken& token)
+void cancel_point(const CancelToken& ct)
 {
-    if (token.is_canceled())
+    if (ct.is_canceled())
     {
         throw gcl::Canceled{};
     }
