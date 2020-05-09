@@ -2,10 +2,10 @@
 
 #include <atomic>
 #include <chrono>
-#include <exception>
 #include <functional>
 #include <future>
 #include <memory>
+#include <stdexcept>
 #include <tuple>
 #include <vector>
 
@@ -490,6 +490,40 @@ template<typename Result>
 Task<Result> join_any_cl(const CancelToken& ct, Vec<Result> tasks)
 {
     return task([&ct](const Vec<Result>& ts){ return wait_any_cl(ct, ts).get(); }, std::move(tasks));
+}
+
+template<typename InputIt, typename UnaryOperation>
+Task<void> for_each(InputIt first, InputIt last, UnaryOperation unary_op)
+{
+    const auto distance = std::distance(first, last);
+    if (distance <= 0)
+    {
+        return task([]{ throw std::logic_error{"gcl::for_each: distance <= 0"}; });
+    }
+    Vec<void> tasks;
+    tasks.reserve(static_cast<std::size_t>(distance));
+    for (; first != last; ++first)
+    {
+        tasks.emplace_back([unary_op, value = *first]{ unary_op(value); });
+    }
+    return join(tasks);
+}
+
+template<typename InputIt, typename UnaryOperation>
+Task<void> for_each_cl(const CancelToken& ct, InputIt first, InputIt last, UnaryOperation unary_op)
+{
+    const auto distance = std::distance(first, last);
+    if (distance <= 0)
+    {
+        return task([]{ throw std::logic_error{"gcl::for_each_cl: distance <= 0"}; });
+    }
+    Vec<void> tasks;
+    tasks.reserve(static_cast<std::size_t>(distance));
+    for (; first != last; ++first)
+    {
+        tasks.emplace_back([unary_op, value = *first]{ unary_op(value); });
+    }
+    return join_cl(ct, tasks);
 }
 
 } // gcl
