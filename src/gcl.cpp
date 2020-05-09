@@ -126,15 +126,15 @@ void detail::BaseImpl::schedule(Exec* const e)
     m_schedule(e);
 }
 
-void detail::BaseImpl::visit(const std::function<void(BaseImpl&)>& f)
+void detail::BaseImpl::visit_depth(const std::function<void(BaseImpl&)>& f)
 {
     if (m_visited)
     {
         return;
     }
-    for (auto p : m_parents)
+    for (BaseImpl* const p : m_parents)
     {
-        p->visit(f);
+        p->visit_depth(f);
     }
     f(*this);
     m_visited = true;
@@ -146,14 +146,14 @@ void detail::BaseImpl::unvisit()
     {
         return;
     }
-    for (auto p : m_parents)
+    for (BaseImpl* const p : m_parents)
     {
         p->unvisit();
     }
     m_visited = false;
 }
 
-void detail::BaseImpl::visit_breadth_first(const std::function<void(BaseImpl&)>& f)
+void detail::BaseImpl::visit_breadth(const std::function<void(BaseImpl&)>& f)
 {
     std::vector<BaseImpl*> tasks;
     std::queue<BaseImpl*> q;
@@ -162,9 +162,9 @@ void detail::BaseImpl::visit_breadth_first(const std::function<void(BaseImpl&)>&
     m_visited = true;
     while (!q.empty())
     {
-        const auto v = q.front();
+        const BaseImpl* const v = q.front();
         q.pop();
-        for (const auto w : v->m_parents)
+        for (BaseImpl* const w : v->m_parents)
         {
             if (!w->m_visited)
             {
@@ -183,6 +183,25 @@ void detail::BaseImpl::visit_breadth_first(const std::function<void(BaseImpl&)>&
 void detail::BaseImpl::add_parent(BaseImpl& impl)
 {
     m_parents.emplace_back(&impl);
+}
+
+TaskId detail::BaseImpl::id() const
+{
+    return std::hash<const BaseImpl*>{}(this);
+}
+
+std::vector<Edge> detail::BaseImpl::edges()
+{
+    unvisit();
+    std::vector<Edge> es;
+    visit_depth([&es](BaseImpl& i)
+    {
+        for (const BaseImpl* const p : i.m_parents)
+        {
+            es.push_back({p->id(), i.id()});
+        }
+    });
+    return es;
 }
 
 } // gcl

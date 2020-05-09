@@ -33,6 +33,14 @@ private:
     std::unique_ptr<Impl> m_impl;
 };
 
+using TaskId = std::size_t;
+
+struct Edge
+{
+    TaskId parent;
+    TaskId child;
+};
+
 namespace detail
 {
 
@@ -60,6 +68,10 @@ public:
 
     template<typename Clock, typename Duration>
     std::future_status wait_until(const std::chrono::time_point<Clock, Duration>& tp) const;
+
+    TaskId id() const;
+
+    std::vector<Edge> edges() const;
 
 protected:
     BaseTask() = default;
@@ -126,10 +138,12 @@ public:
     virtual void release() = 0;
 
     void schedule(Exec* e = nullptr);
-    void visit(const std::function<void(BaseImpl&)>& f);
+    void visit_breadth(const std::function<void(BaseImpl&)>& f);
+    void visit_depth(const std::function<void(BaseImpl&)>& f);
     void unvisit();
-    void visit_breadth_first(const std::function<void(BaseImpl&)>& f);
     void add_parent(BaseImpl& impl);
+    std::size_t id() const;
+    std::vector<Edge> edges();
 
 protected:
     BaseImpl() = default;
@@ -232,21 +246,21 @@ template<typename Result>
 void BaseTask<Result>::schedule()
 {
     m_impl->unvisit();
-    m_impl->visit_breadth_first([](BaseImpl& i){ i.schedule(); });
+    m_impl->visit_breadth([](BaseImpl& i){ i.schedule(); });
 }
 
 template<typename Result>
 void BaseTask<Result>::schedule(Exec& e)
 {
     m_impl->unvisit();
-    m_impl->visit_breadth_first([&e](BaseImpl& i){ i.schedule(&e); });
+    m_impl->visit_breadth([&e](BaseImpl& i){ i.schedule(&e); });
 }
 
 template<typename Result>
 void BaseTask<Result>::release()
 {
     m_impl->unvisit();
-    m_impl->visit_breadth_first([](BaseImpl& i){ i.release(); });
+    m_impl->visit_breadth([](BaseImpl& i){ i.release(); });
 }
 
 template<typename Result>
@@ -273,6 +287,18 @@ template<typename Clock, typename Duration>
 std::future_status BaseTask<Result>::wait_until(const std::chrono::time_point<Clock, Duration>& tp) const
 {
     return m_impl->m_future.wait_until(tp);
+}
+
+template<typename Result>
+std::size_t BaseTask<Result>::id() const
+{
+    return m_impl->id();
+}
+
+template<typename Result>
+std::vector<Edge> BaseTask<Result>::edges() const
+{
+    return m_impl->edges();
 }
 
 } // detail

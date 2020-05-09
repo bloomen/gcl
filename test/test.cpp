@@ -2,6 +2,16 @@
 #include "catch.hpp"
 #include "gcl.h"
 
+namespace gcl
+{
+
+bool operator==(const Edge& lhs, const Edge& rhs)
+{
+    return lhs.parent == rhs.parent && lhs.child == rhs.child;
+}
+
+}
+
 TEST_CASE("schedule")
 {
     auto p1 = gcl::task([]{ return 42; });
@@ -113,4 +123,16 @@ TEST_CASE("schedule_with_mixed_parents")
     t.schedule();
     t.wait();
     REQUIRE(5 == x);
+}
+
+TEST_CASE("edges")
+{
+    auto p1 = gcl::task([]{ return 42; });
+    auto p2 = gcl::task([]{ return 13; });
+    auto t = gcl::join(p1, p2);
+    const std::vector<gcl::Edge> exp_edges = {
+        {p1.id(), t.id()},
+        {p2.id(), t.id()}
+    };
+    REQUIRE(exp_edges == t.edges());
 }
