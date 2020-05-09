@@ -136,3 +136,13 @@ TEST_CASE("edges")
     };
     REQUIRE(exp_edges == t.edges());
 }
+
+TEST_CASE("cancel_point")
+{
+    gcl::CancelToken tk;
+    gcl::cancel_point(tk);
+    tk.cancel();
+    REQUIRE_THROWS_AS(gcl::cancel_point(tk), gcl::Canceled);
+    tk.uncancel();
+    gcl::cancel_point(tk);
+}

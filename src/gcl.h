@@ -1,6 +1,8 @@
 #pragma once
 
+#include <atomic>
 #include <chrono>
+#include <exception>
 #include <functional>
 #include <future>
 #include <memory>
@@ -320,6 +322,41 @@ void Task<void>::get() const
     this->m_impl->m_future.get();
 }
 
+// Thrown to cancel an operation
+class Canceled : public std::exception
+{
+};
+
+// Used to cancel operations
+class CancelToken
+{
+public:
+    void cancel()
+    {
+        m_canceled = true;
+    }
+    void uncancel()
+    {
+        m_canceled = false;
+    }
+    bool is_canceled() const
+    {
+        return m_canceled.load();
+    }
+private:
+    std::atomic<bool> m_canceled{false};
+};
+
+// Used to cancel operations. Throws Canceled when token is canceled
+inline
+void cancel_point(const CancelToken& token)
+{
+    if (token.is_canceled())
+    {
+        throw gcl::Canceled{};
+    }
+}
+
 // Waits for all tasks to finish
 template<typename... TaskTypes>
 void wait(const TaskTypes&... tasks)
@@ -327,11 +364,112 @@ void wait(const TaskTypes&... tasks)
     detail::for_each([](const auto& t){ t.wait(); }, tasks...);
 }
 
+// Waits for all tasks to finish (cancelable)
+// Throws `Canceled` if waiting was canceled
+template<typename... TaskTypes>
+void wait_cl(const CancelToken& ct, const TaskTypes&... tasks)
+{
+    bool done = false;
+    while (!done)
+    {
+        done = true;
+        cancel_point(ct);
+        detail::for_each([&done](const auto& t)
+        {
+            if (t.wait_for(std::chrono::microseconds{0}) != std::future_status::ready &&
+                t.wait_for(std::chrono::microseconds{1}) != std::future_status::ready)
+            {
+                done = false;
+            }
+        },
+        tasks...);
+    }
+}
+
+// Waits for the first task to finish; only works for `Vec`
+template<typename Result>
+Task<Result> wait_any(const Vec<Result>& tasks)
+{
+    Task<Result>* result = nullptr;
+    while (result == nullptr)
+    {
+        detail::for_each([&result,&tasks](const auto& t)
+        {
+            if (result == nullptr)
+            {
+                if (t.wait_for(std::chrono::microseconds{0}) == std::future_status::ready)
+                {
+                    result = &t;
+                }
+                else if (t.wait_for(std::chrono::microseconds{1}) == std::future_status::ready)
+                {
+                    result = &t;
+                }
+            }
+        },
+        tasks);
+    }
+    return *result;
+}
+
+// Waits for the first task to finish; only works for `Vec` (cancelable)
+// Throws `Canceled` if waiting was canceled
+template<typename Result>
+Task<Result> wait_any_cl(const CancelToken& ct, const Vec<Result>& tasks)
+{
+    Task<Result>* result = nullptr;
+    while (result == nullptr)
+    {
+        cancel_point(ct);
+        detail::for_each([&result,&tasks](const auto& t)
+        {
+            if (result == nullptr)
+            {
+                if (t.wait_for(std::chrono::microseconds{0}) == std::future_status::ready)
+                {
+                    result = &t;
+                }
+                else if (t.wait_for(std::chrono::microseconds{1}) == std::future_status::ready)
+                {
+                    result = &t;
+                }
+            }
+        },
+        tasks);
+    }
+    return *result;
+}
+
 // Joins all tasks into a single waiting task
 template<typename... TaskTypes>
 Task<void> join(TaskTypes... tasks)
 {
     return task([](const TaskTypes&... ts){ wait(ts...); }, std::move(tasks)...);
+}
+
+// Joins all tasks into a single waiting task (cancelable)
+// Task's exception is `Canceled` if waiting was canceled
+template<typename... TaskTypes>
+Task<void> join_cl(const CancelToken& ct, TaskTypes... tasks)
+{
+    return task([&ct](const TaskTypes&... ts){ wait_cl(ct, ts...); }, std::move(tasks)...);
+}
+
+// Joins all tasks into a single waiting task
+// Waits for the first task to finish; only works for `Vec`
+template<typename Result>
+Task<Result> join_any(Vec<Result> tasks)
+{
+    return task([](const Vec<Result>& ts){ return wait_any(ts).get(); }, std::move(tasks));
+}
+
+// Joins all tasks into a single waiting task (cancelable)
+// Waits for the first task to finish; only works for `Vec`
+// Task's exception is `Canceled` if waiting was canceled
+template<typename Result>
+Task<Result> join_any_cl(const CancelToken& ct, Vec<Result> tasks)
+{
+    return task([&ct](const Vec<Result>& ts){ return wait_any_cl(ct, ts).get(); }, std::move(tasks));
 }
 
 } // gcl
