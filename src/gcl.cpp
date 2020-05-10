@@ -104,7 +104,7 @@ private:
 };
 
 Async::Async(const std::size_t n_threads)
-    : m_impl{new Impl{n_threads}}
+    : m_impl{std::make_unique<Impl>(n_threads)}
 {}
 
 Async::~Async() = default;
