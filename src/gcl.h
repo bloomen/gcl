@@ -147,9 +147,9 @@ class BaseImpl
 public:
     virtual ~BaseImpl() = default;
 
+    virtual void schedule(Exec* e = nullptr) = 0;
     virtual void release() = 0;
 
-    void schedule(Exec* e = nullptr);
     void visit_breadth(const std::function<void(BaseImpl&)>& f);
     void visit_depth(const std::function<void(BaseImpl&)>& f);
     void unvisit();
@@ -160,7 +160,6 @@ public:
 protected:
     BaseImpl() = default;
     bool m_visited = false;
-    std::function<void(Exec*)> m_schedule;
     std::vector<BaseImpl*> m_parents;
 };
 
@@ -221,22 +220,23 @@ struct BaseTask<Result>::Impl : public BaseImpl
     Impl(Functor&& functor, Parents... parents)
     {
         for_each(CollectParents{this}, parents...);
-        auto func = std::bind(std::forward<Functor>(functor), std::move(parents)...);
-        m_schedule = [this, func = std::move(func)](Exec* const e)
+        m_functor = std::bind(std::forward<Functor>(functor), std::move(parents)...);
+    }
+
+    void schedule(Exec* const e) override
+    {
+        if (e)
         {
-            if (e)
-            {
-                auto pkg = std::make_shared<std::packaged_task<Result()>>(func);
-                m_future = pkg->get_future();
-                e->execute([pkg = std::move(pkg)]{ (*pkg)(); });
-            }
-            else
-            {
-                std::packaged_task<Result()> pkg{func};
-                m_future = pkg.get_future();
-                pkg();
-            }
-        };
+            auto pkg = std::make_shared<std::packaged_task<Result()>>(m_functor);
+            m_future = pkg->get_future();
+            e->execute([pkg = std::move(pkg)]{ (*pkg)(); });
+        }
+        else
+        {
+            std::packaged_task<Result()> pkg{m_functor};
+            m_future = pkg.get_future();
+            pkg();
+        }
     }
 
     void release() override
@@ -244,6 +244,7 @@ struct BaseTask<Result>::Impl : public BaseImpl
         m_future = {};
     }
 
+    std::function<Result()> m_functor;
     std::shared_future<Result> m_future;
 };
 

@@ -121,11 +121,6 @@ void Async::execute(std::function<void()> f)
     }
 }
 
-void detail::BaseImpl::schedule(Exec* const e)
-{
-    m_schedule(e);
-}
-
 void detail::BaseImpl::visit_depth(const std::function<void(BaseImpl&)>& f)
 {
     if (m_visited)
