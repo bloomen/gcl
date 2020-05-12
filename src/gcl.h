@@ -59,7 +59,7 @@ public:
     void schedule();
     void schedule(Exec& e);
 
-    // Release this task's result and its parents' results
+    // Releases this task's result and its parents' results
     void release();
 
     // Returns true if this task contains a valid shared state
@@ -331,13 +331,6 @@ inline
 void Task<void>::get() const
 {
     this->m_impl->m_future.get();
-}
-
-// Returns a task for releasing the task's result and its parents' results
-template<typename Result>
-Task<void> release(Task<Result> t)
-{
-    return task([](Task<Result> t){ t.release(); }, std::move(t));
 }
 
 // Waits for all tasks to finish

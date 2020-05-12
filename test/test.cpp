@@ -137,21 +137,6 @@ TEST_CASE("edges")
     REQUIRE(exp_edges == t.edges());
 }
 
-TEST_CASE("release")
-{
-    auto p1 = gcl::task([]{ return 42; });
-    auto p2 = gcl::task([]{ return 13; });
-    auto t = gcl::join(p1, p2);
-    t.schedule();
-    REQUIRE(p1.valid());
-    REQUIRE(p2.valid());
-    REQUIRE(t.valid());
-    gcl::release(t).schedule();
-    REQUIRE(!p1.valid());
-    REQUIRE(!p2.valid());
-    REQUIRE(!t.valid());
-}
-
 TEST_CASE("get_with_exception")
 {
     auto t = gcl::task([]{ throw std::bad_alloc{}; });
