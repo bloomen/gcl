@@ -121,33 +121,6 @@ void Async::execute(std::function<void()> f)
     }
 }
 
-void detail::BaseImpl::visit_depth(const std::function<void(BaseImpl&)>& f)
-{
-    if (m_visited)
-    {
-        return;
-    }
-    for (BaseImpl* const p : m_parents)
-    {
-        p->visit_depth(f);
-    }
-    f(*this);
-    m_visited = true;
-}
-
-void detail::BaseImpl::unvisit()
-{
-    if (!m_visited)
-    {
-        return;
-    }
-    for (BaseImpl* const p : m_parents)
-    {
-        p->unvisit();
-    }
-    m_visited = false;
-}
-
 void detail::BaseImpl::visit_breadth(const std::function<void(BaseImpl&)>& f)
 {
     std::vector<BaseImpl*> tasks;
@@ -173,6 +146,33 @@ void detail::BaseImpl::visit_breadth(const std::function<void(BaseImpl&)>& f)
     {
         f(**t);
     }
+}
+
+void detail::BaseImpl::visit_depth(const std::function<void(BaseImpl&)>& f)
+{
+    if (m_visited)
+    {
+        return;
+    }
+    for (BaseImpl* const p : m_parents)
+    {
+        p->visit_depth(f);
+    }
+    f(*this);
+    m_visited = true;
+}
+
+void detail::BaseImpl::unvisit()
+{
+    if (!m_visited)
+    {
+        return;
+    }
+    for (BaseImpl* const p : m_parents)
+    {
+        p->unvisit();
+    }
+    m_visited = false;
 }
 
 void detail::BaseImpl::add_parent(BaseImpl& impl)
