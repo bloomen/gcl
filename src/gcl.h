@@ -142,27 +142,6 @@ auto vec(Task<Result>... tasks)
 namespace detail
 {
 
-class BaseImpl
-{
-public:
-    virtual ~BaseImpl() = default;
-
-    virtual void schedule(Exec* e = nullptr) = 0;
-    virtual void release() = 0;
-
-    void visit_breadth(const std::function<void(BaseImpl&)>& f);
-    void visit_depth(const std::function<void(BaseImpl&)>& f);
-    void unvisit();
-    void add_parent(BaseImpl& impl);
-    std::size_t id() const;
-    std::vector<Edge> edges();
-
-protected:
-    BaseImpl() = default;
-    bool m_visited = false;
-    std::vector<BaseImpl*> m_parents;
-};
-
 template<typename F>
 void for_each_impl(const F&)
 {
@@ -196,11 +175,38 @@ void for_each_impl(const F& f, Vec<Result>&& ts, TaskTypes&&... tasks)
     for_each_impl(f, std::forward<TaskTypes>(tasks)...);
 }
 
+} // detail
+
+// Applies functor `f` to each task in `tasks` which can be of type `Task` and/or `Vec`
 template<typename F, typename... TaskTypes>
 void for_each(const F& f, TaskTypes&&... tasks)
 {
-    for_each_impl(f, std::forward<TaskTypes>(tasks)...);
+    detail::for_each_impl(f, std::forward<TaskTypes>(tasks)...);
 }
+
+namespace detail
+{
+
+class BaseImpl
+{
+public:
+    virtual ~BaseImpl() = default;
+
+    virtual void schedule(Exec* e = nullptr) = 0;
+    virtual void release() = 0;
+
+    void visit_breadth(const std::function<void(BaseImpl&)>& f);
+    void visit_depth(const std::function<void(BaseImpl&)>& f);
+    void unvisit();
+    void add_parent(BaseImpl& impl);
+    std::size_t id() const;
+    std::vector<Edge> edges();
+
+protected:
+    BaseImpl() = default;
+    bool m_visited = false;
+    std::vector<BaseImpl*> m_parents;
+};
 
 struct CollectParents
 {
@@ -338,20 +344,20 @@ void Task<void>::get() const
 template<typename... TaskTypes>
 void wait(const TaskTypes&... tasks)
 {
-    detail::for_each([](const auto& t){ t.wait(); }, tasks...);
+    for_each([](const auto& t){ t.wait(); }, tasks...);
 }
 
 // Waits for all tasks to finish
-// May propagate the first exception thrown by `tasks` if any
+// Propagates the first exception thrown by `tasks` if any
 template<typename... TaskTypes>
 void get(const TaskTypes&... tasks)
 {
     wait(tasks...);
-    detail::for_each([](const auto& t){ t.get(); }, tasks...);
+    for_each([](const auto& t){ t.get(); }, tasks...);
 }
 
 // Joins all tasks into a single waiting task
-// May contain the first exception thrown by `tasks` if any
+// Contains the first exception thrown by `tasks` if any
 template<typename... TaskTypes>
 Task<void> join(TaskTypes... tasks)
 {
