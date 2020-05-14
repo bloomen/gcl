@@ -18,7 +18,7 @@ public:
     virtual void execute(std::function<void()> f) = 0;
 };
 
-// Async executor for parallel execution
+// Async executor for asynchronous execution
 class Async : public Exec
 {
 public:
@@ -122,7 +122,7 @@ public:
 template<typename Result>
 using Vec = std::vector<Task<Result>>;
 
-// Creates a new task where parents can be Task and/or Vec
+// Creates a new task where parents can be `Task` and/or `Vec`
 template<typename Functor, typename... Parents>
 auto task(Functor&& functor, Parents... parents)
 {
@@ -340,14 +340,14 @@ void Task<void>::get() const
     this->m_impl->m_future.get();
 }
 
-// Waits for all tasks to finish
+// Waits for all tasks to finish which can be of type `Task` and/or `Vec`
 template<typename... TaskTypes>
 void wait(const TaskTypes&... tasks)
 {
     for_each([](const auto& t){ t.wait(); }, tasks...);
 }
 
-// Waits for all tasks to finish
+// Waits for all tasks to finish which can be of type `Task` and/or `Vec`
 // Propagates the first exception thrown by `tasks` if any
 template<typename... TaskTypes>
 void get(const TaskTypes&... tasks)
@@ -356,7 +356,7 @@ void get(const TaskTypes&... tasks)
     for_each([](const auto& t){ t.get(); }, tasks...);
 }
 
-// Joins all tasks into a single waiting task
+// Joins all tasks into a single waiting task where `tasks` can be of type `Task` and/or `Vec`
 // Contains the first exception thrown by `tasks` if any
 template<typename... TaskTypes>
 Task<void> join(TaskTypes... tasks)
