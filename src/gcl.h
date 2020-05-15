@@ -55,6 +55,10 @@ public:
     template<typename Functor, typename... Parents>
     void init(Functor&& functor, Parents... parents);
 
+    // Creates a continuation to this task
+    template<typename Functor>
+    auto then(Functor&& functor);
+
     // Schedules this task and its parents for execution
     void schedule();
     void schedule(Exec& e);
@@ -262,6 +266,13 @@ void BaseTask<Result>::init(Functor&& functor, Parents... parents)
 }
 
 template<typename Result>
+template<typename Functor>
+auto BaseTask<Result>::then(Functor&& functor)
+{
+    return task(std::forward<Functor>(functor), static_cast<const Task<Result>&>(*this));
+}
+
+template<typename Result>
 void BaseTask<Result>::schedule()
 {
     m_impl->unvisit();
@@ -356,10 +367,10 @@ void get(const TaskTypes&... tasks)
     for_each([](const auto& t){ t.get(); }, tasks...);
 }
 
-// Joins all tasks into a single waiting task where `tasks` can be of type `Task` and/or `Vec`
+// Creates a task that waits for all tasks to finish where `tasks` can be of type `Task` and/or `Vec`
 // Contains the first exception thrown by `tasks` if any
 template<typename... TaskTypes>
-Task<void> join(TaskTypes... tasks)
+Task<void> when(TaskTypes... tasks)
 {
     return task([](const TaskTypes&... ts){ get(ts...); }, std::move(tasks)...);
 }

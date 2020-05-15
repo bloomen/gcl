@@ -54,7 +54,7 @@ TEST_CASE("schedule_using_join")
 {
     auto p1 = gcl::task([]{ return 42; });
     auto p2 = gcl::task([]{ return 13; });
-    auto t = gcl::join(p1, p2);
+    auto t = gcl::when(p1, p2);
     t.schedule();
     t.wait();
     REQUIRE(42 == p1.get());
@@ -65,7 +65,7 @@ TEST_CASE("schedule_using_join_with_vec_parents")
 {
     auto p1 = gcl::task([]{ return 42; });
     auto p2 = gcl::task([]{ return 13; });
-    auto t = gcl::join(gcl::vec(p1, p2));
+    auto t = gcl::when(gcl::vec(p1, p2));
     t.schedule();
     t.wait();
     REQUIRE(42 == p1.get());
@@ -119,7 +119,7 @@ TEST_CASE("schedule_with_mixed_parents")
     auto p3 = gcl::task([&x]{ x++; return 20; });
     auto p4 = gcl::task([&x]{ x++; return 21; });
     auto p6 = gcl::task([&x]{ x++; return std::string{"guan"}; });
-    auto t = gcl::join(p1, p2, gcl::vec(p3, p4), p6);
+    auto t = gcl::when(p1, p2, gcl::vec(p3, p4), p6);
     t.schedule();
     t.wait();
     REQUIRE(5 == x);
@@ -129,7 +129,7 @@ TEST_CASE("edges")
 {
     auto p1 = gcl::task([]{ return 42; });
     auto p2 = gcl::task([]{ return 13; });
-    auto t = gcl::join(p1, p2);
+    auto t = gcl::when(p1, p2);
     const std::vector<gcl::Edge> exp_edges = {
         {p1.id(), t.id()},
         {p2.id(), t.id()}
@@ -148,7 +148,14 @@ TEST_CASE("join_with_exception")
 {
     auto t1 = gcl::task([]{ throw std::bad_alloc{}; });
     auto t2 = gcl::task([]{ return 42; });
-    auto t = gcl::join(t1, t2);
+    auto t = gcl::when(t1, t2);
     t.schedule();
     REQUIRE_THROWS_AS(t.get(), std::bad_alloc);
+}
+
+TEST_CASE("then")
+{
+    auto t1 = gcl::task([]{ return 42; }).then([](auto t){ return t.get() + 1; });
+    t1.schedule();
+    REQUIRE(43 == t1.get());
 }
