@@ -16,7 +16,7 @@ TEST_CASE("schedule")
 {
     auto p1 = gcl::task([]{ return 42; });
     auto p2 = gcl::task([]{ return 13; });
-    auto t = gcl::task([](gcl::Task<int> p1, gcl::Task<int> p2){ return p1.get() + p2.get(); }, p1, p2);
+    auto t = gcl::bind(p1, p2).then([](auto p1, auto p2){ return p1.get() + p2.get(); });
     t.schedule();
     REQUIRE(55 == t.get());
 }
@@ -25,58 +25,38 @@ TEST_CASE("schedule_with_vec_parents")
 {
     auto p1 = gcl::task([]{ return 42; });
     auto p2 = gcl::task([]{ return 13; });
-    auto t = gcl::task([](gcl::Vec<int> p){ return p[0].get() + p[1].get(); }, gcl::vec(p1, p2));
+    auto t = gcl::bind(gcl::vec(p1, p2)).then([](gcl::Vec<int> p){ return p[0].get() + p[1].get(); });
     t.schedule();
     REQUIRE(55 == t.get());
 }
 
-TEST_CASE("schedule_using_Async")
+TEST_CASE("schedule_using_async")
 {
     auto p1 = gcl::task([]{ return 42; });
     auto p2 = gcl::task([]{ return 13; });
-    auto t = gcl::task([](gcl::Task<int> p1, gcl::Task<int> p2){ return p1.get() + p2.get(); }, p1, p2);
+    auto t = gcl::bind(p1, p2).then([](auto p1, auto p2){ return p1.get() + p2.get(); });
     gcl::Async async{4};
     t.schedule(async);
+    t.wait();
     REQUIRE(55 == t.get());
 }
 
-TEST_CASE("schedule_using_Async_with_vec_parents")
+TEST_CASE("schedule_with_vec_parents_using_async")
 {
     auto p1 = gcl::task([]{ return 42; });
     auto p2 = gcl::task([]{ return 13; });
-    auto t = gcl::task([](gcl::Task<int> p1, gcl::Task<int> p2){ return p1.get() + p2.get(); }, p1, p2);
+    auto t = gcl::bind(gcl::vec(p1, p2)).then([](gcl::Vec<int> p){ return p[0].get() + p[1].get(); });
     gcl::Async async{4};
     t.schedule(async);
+    t.wait();
     REQUIRE(55 == t.get());
-}
-
-TEST_CASE("schedule_using_join")
-{
-    auto p1 = gcl::task([]{ return 42; });
-    auto p2 = gcl::task([]{ return 13; });
-    auto t = gcl::when(p1, p2);
-    t.schedule();
-    t.wait();
-    REQUIRE(42 == p1.get());
-    REQUIRE(13 == p2.get());
-}
-
-TEST_CASE("schedule_using_join_with_vec_parents")
-{
-    auto p1 = gcl::task([]{ return 42; });
-    auto p2 = gcl::task([]{ return 13; });
-    auto t = gcl::when(gcl::vec(p1, p2));
-    t.schedule();
-    t.wait();
-    REQUIRE(42 == p1.get());
-    REQUIRE(13 == p2.get());
 }
 
 TEST_CASE("schedule_using_reference_type")
 {
     int x = 42;
     auto p = gcl::task([&x]() -> int& { return x; });
-    auto t = gcl::task([](auto p) -> int& { return p.get(); }, p);
+    auto t = p.then([](auto p) -> int& { return p.get(); });
     gcl::Async async{4};
     t.schedule(async);
     t.wait();
@@ -102,11 +82,11 @@ TEST_CASE("schedule_a_wide_graph")
     gcl::Vec<int> tasks;
     for (int i = 0; i < 10; ++i)
     {
-        auto t1 = gcl::task([&x](auto t){ x++; return t.get(); }, top);
-        auto t2 = gcl::task([&x](auto t){ x++; return t.get(); }, t1);
+        auto t1 = top.then([&x](auto t){ x++; return t.get(); });
+        auto t2 = t1.then([&x](auto t){ x++; return t.get(); });
         tasks.push_back(t2);
     }
-    auto bottom = gcl::task([&x](gcl::Vec<int> ts) { x++; gcl::wait(ts); }, tasks);
+    auto bottom = gcl::bind(tasks).then([&x](gcl::Vec<int>) { x++; });
     bottom.schedule();
     REQUIRE(22 == x);
 }
@@ -130,32 +110,10 @@ TEST_CASE("edges")
     auto p1 = gcl::task([]{ return 42; });
     auto p2 = gcl::task([]{ return 13; });
     auto t = gcl::when(p1, p2);
+    t.schedule();
     const std::vector<gcl::Edge> exp_edges = {
         {p1.id(), t.id()},
         {p2.id(), t.id()}
     };
     REQUIRE(exp_edges == t.edges());
-}
-
-TEST_CASE("get_with_exception")
-{
-    auto t = gcl::task([]{ throw std::bad_alloc{}; });
-    t.schedule();
-    REQUIRE_THROWS_AS(gcl::get(t), std::bad_alloc);
-}
-
-TEST_CASE("join_with_exception")
-{
-    auto t1 = gcl::task([]{ throw std::bad_alloc{}; });
-    auto t2 = gcl::task([]{ return 42; });
-    auto t = gcl::when(t1, t2);
-    t.schedule();
-    REQUIRE_THROWS_AS(t.get(), std::bad_alloc);
-}
-
-TEST_CASE("then")
-{
-    auto t1 = gcl::task([]{ return 42; }).then([](auto t){ return t.get() + 1; });
-    t1.schedule();
-    REQUIRE(43 == t1.get());
 }

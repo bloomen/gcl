@@ -55,9 +55,9 @@ public:
     template<typename Functor, typename... Parents>
     void init(Functor&& functor, Parents... parents);
 
-    // Creates a continuation to this task
+    // Creates a child to this task
     template<typename Functor>
-    auto then(Functor&& functor);
+    auto then(Functor&& functor) const;
 
     // Schedules this task and its parents for execution
     void schedule();
@@ -126,12 +126,12 @@ public:
 template<typename Result>
 using Vec = std::vector<Task<Result>>;
 
-// Creates a new task where parents can be `Task` and/or `Vec`
-template<typename Functor, typename... Parents>
-auto task(Functor&& functor, Parents... parents)
+// Creates a new task
+template<typename Functor>
+auto task(Functor&& functor)
 {
-    Task<decltype(functor(parents...))> t;
-    t.init(std::forward<Functor>(functor), std::move(parents)...);
+    Task<decltype(functor())> t;
+    t.init(std::forward<Functor>(functor));
     return t;
 }
 
@@ -267,9 +267,16 @@ void BaseTask<Result>::init(Functor&& functor, Parents... parents)
 
 template<typename Result>
 template<typename Functor>
-auto BaseTask<Result>::then(Functor&& functor)
+auto BaseTask<Result>::then(Functor&& functor) const
 {
-    return task(std::forward<Functor>(functor), static_cast<const Task<Result>&>(*this));
+    auto f = [f = std::forward<Functor>(functor)](Task<Result> t)
+             {
+                 t.wait();
+                 return f(std::move(t));
+             };
+    Task<decltype(f(static_cast<const Task<Result>&>(*this)))> t;
+    t.init(std::move(f), static_cast<const Task<Result>&>(*this));
+    return t;
 }
 
 template<typename Result>
@@ -351,28 +358,51 @@ void Task<void>::get() const
     this->m_impl->m_future.get();
 }
 
-// Waits for all tasks to finish which can be of type `Task` and/or `Vec`
-template<typename... TaskTypes>
-void wait(const TaskTypes&... tasks)
+// Binds tasks together
+template<typename... Tasks>
+class Bind
 {
-    for_each([](const auto& t){ t.wait(); }, tasks...);
+public:
+    // `tasks` can be of type `Task` and/or `Vec`
+    explicit
+    Bind(Tasks... tasks)
+        : m_tasks{std::move(tasks)...}
+    {}
+
+    // Creates a child to all tasks
+    template<typename Functor>
+    auto then(Functor&& functor) const
+    {
+        return then_impl([f = std::forward<Functor>(functor)](Tasks... ts)
+                         {
+                             for_each([](const auto& t){ t.wait(); }, ts...);
+                             return f(std::move(ts)...);
+                         }, std::index_sequence_for<Tasks...>{});
+    }
+
+private:
+    template<typename Functor, std::size_t... Is>
+    auto then_impl(Functor&& functor, std::index_sequence<Is...>) const
+    {
+        Task<decltype(functor(std::get<Is>(m_tasks)...))> t;
+        t.init(std::forward<Functor>(functor), std::get<Is>(m_tasks)...);
+        return t;
+    }
+    std::tuple<Tasks...> m_tasks;
+};
+
+// Binds tasks together where `tasks` can be of type `Task` and/or `Vec`
+template<typename... Tasks>
+auto bind(Tasks... tasks)
+{
+    return Bind<Tasks...>{std::move(tasks)...};
 }
 
-// Waits for all tasks to finish which can be of type `Task` and/or `Vec`
-// Propagates the first exception thrown by `tasks` if any
-template<typename... TaskTypes>
-void get(const TaskTypes&... tasks)
+// Creates a child that waits for all tasks to finish
+template<typename... Tasks>
+Task<void> when(Tasks... tasks)
 {
-    wait(tasks...);
-    for_each([](const auto& t){ t.get(); }, tasks...);
-}
-
-// Creates a task that waits for all tasks to finish where `tasks` can be of type `Task` and/or `Vec`
-// Contains the first exception thrown by `tasks` if any
-template<typename... TaskTypes>
-Task<void> when(TaskTypes... tasks)
-{
-    return task([](const TaskTypes&... ts){ get(ts...); }, std::move(tasks)...);
+    return gcl::bind(std::move(tasks)...).then([](Tasks... ts){ for_each([](const auto& t){ t.get(); }, ts...); });
 }
 
 } // gcl
