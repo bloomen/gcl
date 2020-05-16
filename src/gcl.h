@@ -57,9 +57,6 @@ class BaseTask
 {
 public:
 
-    template<typename Functor, typename... Parents>
-    void init(Functor&& functor, Parents... parents);
-
     // Creates a child to this task
     template<typename Functor>
     auto then(Functor&& functor) const;
@@ -92,13 +89,24 @@ public:
     std::vector<gcl::Edge> edges() const;
 
 protected:
-    BaseTask() = default;
     friend struct CollectParents;
+
+    BaseTask() = default;
+
+    template<typename Functor, typename... Parents>
+    void init(Functor&& functor, Parents... parents);
+
     struct Impl;
     std::shared_ptr<Impl> m_impl;
 };
 
 } // detail
+
+template<typename Functor>
+auto task(Functor&& functor);
+
+template<typename... Tasks>
+class Tie;
 
 // The task type for general result types
 template<typename Result>
@@ -107,6 +115,11 @@ class Task : public gcl::detail::BaseTask<Result>
 public:
     // Returns the task's result. May throw
     const Result& get() const;
+
+    template<typename F>
+    friend auto task(F&&);
+    template<typename... T>
+    friend class Tie;
 };
 
 // The task type for reference result types
@@ -116,6 +129,11 @@ class Task<Result&> : public gcl::detail::BaseTask<Result&>
 public:
     // Returns the task's result. May throw
     Result& get() const;
+
+    template<typename F>
+    friend auto task(F&&);
+    template<typename... T>
+    friend class Tie;
 };
 
 // The task type for void result
@@ -125,6 +143,11 @@ class Task<void> : public gcl::detail::BaseTask<void>
 public:
     // Returns the task's result. May throw
     void get() const;
+
+    template<typename F>
+    friend auto task(F&&);
+    template<typename... T>
+    friend class Tie;
 };
 
 // Vector to hold multiple tasks of the same type
