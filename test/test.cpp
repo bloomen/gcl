@@ -127,3 +127,15 @@ TEST_CASE("edges")
     };
     REQUIRE(exp_edges == t.edges());
 }
+
+TEST_CASE("schedule_twice")
+{
+    int x = 0;
+    auto p1 = gcl::task([&x]{ x++; });
+    auto p2 = gcl::task([&x]{ x++; });
+    auto t = gcl::when(p1, p2);
+    t.schedule();
+    REQUIRE(2 == x);
+    t.schedule();
+    REQUIRE(4 == x);
+}
