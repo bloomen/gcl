@@ -51,6 +51,10 @@ namespace detail
 {
 
 struct CollectParents;
+template<typename Functor>
+auto task(Functor&& functor);
+template<typename... Tasks>
+class Tie;
 
 template<typename Result>
 class BaseTask
@@ -90,6 +94,10 @@ public:
 
 protected:
     friend struct CollectParents;
+    template<typename F>
+    friend auto task(F&&);
+    template<typename... T>
+    friend class Tie;
 
     BaseTask() = default;
 
@@ -101,12 +109,6 @@ protected:
 };
 
 } // detail
-
-template<typename Functor>
-auto task(Functor&& functor);
-
-template<typename... Tasks>
-class Tie;
 
 // The task type for general result types
 template<typename Result>
