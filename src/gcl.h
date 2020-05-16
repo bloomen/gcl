@@ -186,8 +186,7 @@ namespace detail
 
 template<typename F>
 void for_each_impl(const F&)
-{
-}
+{}
 
 template<typename F, typename Result, typename... TaskTypes>
 void for_each_impl(const F& f, const gcl::Task<Result>& t, TaskTypes&&... tasks)
@@ -261,7 +260,7 @@ struct CollectParents
 };
 
 template<typename Result>
-struct BaseTask<Result>::Impl : public BaseImpl
+struct BaseTask<Result>::Impl : BaseImpl
 {
     template<typename Functor, typename... Parents>
     explicit
@@ -424,7 +423,7 @@ private:
     std::tuple<Tasks...> m_tasks;
 };
 
-// Binds tasks together where `tasks` can be of type `Task` and/or `Vec`
+// Ties tasks together where `tasks` can be of type `Task` and/or `Vec`
 template<typename... Tasks>
 auto tie(Tasks... tasks)
 {
@@ -438,7 +437,7 @@ gcl::Task<void> when(Tasks... tasks)
     return gcl::tie(std::move(tasks)...).then([](Tasks... ts){ gcl::for_each([](const auto& t){ t.get(); }, ts...); });
 }
 
-// Creates a child that waits for all tasks to finish that are part of `Tie`
+// Creates a child that waits for all tasks to finish that are part of `tie`
 template<typename... Tasks>
 gcl::Task<void> when(const gcl::Tie<Tasks...>& tie)
 {
