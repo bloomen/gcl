@@ -16,7 +16,7 @@ TEST_CASE("schedule")
 {
     auto p1 = gcl::task([]{ return 42; });
     auto p2 = gcl::task([]{ return 13; });
-    auto t = gcl::bind(p1, p2).then([](auto p1, auto p2){ return p1.get() + p2.get(); });
+    auto t = gcl::tie(p1, p2).then([](auto p1, auto p2){ return p1.get() + p2.get(); });
     t.schedule();
     REQUIRE(55 == t.get());
 }
@@ -25,7 +25,7 @@ TEST_CASE("schedule_with_vec_parents")
 {
     auto p1 = gcl::task([]{ return 42; });
     auto p2 = gcl::task([]{ return 13; });
-    auto t = gcl::bind(gcl::vec(p1, p2)).then([](gcl::Vec<int> p){ return p[0].get() + p[1].get(); });
+    auto t = gcl::tie(gcl::vec(p1, p2)).then([](gcl::Vec<int> p){ return p[0].get() + p[1].get(); });
     t.schedule();
     REQUIRE(55 == t.get());
 }
@@ -34,7 +34,7 @@ TEST_CASE("schedule_using_async")
 {
     auto p1 = gcl::task([]{ return 42; });
     auto p2 = gcl::task([]{ return 13; });
-    auto t = gcl::bind(p1, p2).then([](auto p1, auto p2){ return p1.get() + p2.get(); });
+    auto t = gcl::tie(p1, p2).then([](auto p1, auto p2){ return p1.get() + p2.get(); });
     gcl::Async async{4};
     t.schedule(async);
     t.wait();
@@ -45,7 +45,7 @@ TEST_CASE("schedule_with_vec_parents_using_async")
 {
     auto p1 = gcl::task([]{ return 42; });
     auto p2 = gcl::task([]{ return 13; });
-    auto t = gcl::bind(gcl::vec(p1, p2)).then([](gcl::Vec<int> p){ return p[0].get() + p[1].get(); });
+    auto t = gcl::tie(gcl::vec(p1, p2)).then([](gcl::Vec<int> p){ return p[0].get() + p[1].get(); });
     gcl::Async async{4};
     t.schedule(async);
     t.wait();
@@ -86,7 +86,7 @@ TEST_CASE("schedule_a_wide_graph")
         auto t2 = t1.then([&x](auto t){ x++; return t.get(); });
         tasks.push_back(t2);
     }
-    auto bottom = gcl::bind(tasks).then([&x](gcl::Vec<int>) { x++; });
+    auto bottom = gcl::tie(tasks).then([&x](gcl::Vec<int>) { x++; });
     bottom.schedule();
     REQUIRE(22 == x);
 }
@@ -103,6 +103,16 @@ TEST_CASE("schedule_with_mixed_parents")
     t.schedule();
     t.wait();
     REQUIRE(5 == x);
+}
+
+TEST_CASE("schedule_with_bind_and_when")
+{
+    int x = 0;
+    auto p1 = gcl::task([&x]{ x++; });
+    auto p2 = gcl::task([&x]{ x++; });
+    auto t = gcl::when(gcl::tie(p1, p2));
+    t.schedule();
+    REQUIRE(2 == x);
 }
 
 TEST_CASE("edges")

@@ -19,7 +19,7 @@ public:
 };
 
 // Async executor for asynchronous execution
-class Async : public Exec
+class Async : public gcl::Exec
 {
 public:
     Async() = default;
@@ -38,8 +38,8 @@ using TaskId = std::size_t;
 // An edge between tasks
 struct Edge
 {
-    TaskId parent;
-    TaskId child;
+    gcl::TaskId parent;
+    gcl::TaskId child;
 };
 
 namespace detail
@@ -61,7 +61,7 @@ public:
 
     // Schedules this task and its parents for execution
     void schedule();
-    void schedule(Exec& e);
+    void schedule(gcl::Exec& e);
 
     // Releases this task's result and its parents' results
     void release();
@@ -81,10 +81,10 @@ public:
     std::future_status wait_until(const std::chrono::time_point<Clock, Duration>& tp) const;
 
     // Returns the id of the task (unique but changes between runs)
-    TaskId id() const;
+    gcl::TaskId id() const;
 
     // Returns the edges between tasks
-    std::vector<Edge> edges() const;
+    std::vector<gcl::Edge> edges() const;
 
 protected:
     BaseTask() = default;
@@ -97,7 +97,7 @@ protected:
 
 // The task type for general result types
 template<typename Result>
-class Task : public detail::BaseTask<Result>
+class Task : public gcl::detail::BaseTask<Result>
 {
 public:
     // Returns the task's result. May throw
@@ -106,7 +106,7 @@ public:
 
 // The task type for reference result types
 template<typename Result>
-class Task<Result&> : public detail::BaseTask<Result&>
+class Task<Result&> : public gcl::detail::BaseTask<Result&>
 {
 public:
     // Returns the task's result. May throw
@@ -115,7 +115,7 @@ public:
 
 // The task type for void result
 template<>
-class Task<void> : public detail::BaseTask<void>
+class Task<void> : public gcl::detail::BaseTask<void>
 {
 public:
     // Returns the task's result. May throw
@@ -124,23 +124,23 @@ public:
 
 // Vector to hold multiple tasks of the same type
 template<typename Result>
-using Vec = std::vector<Task<Result>>;
+using Vec = std::vector<gcl::Task<Result>>;
 
 // Creates a new task
 template<typename Functor>
 auto task(Functor&& functor)
 {
-    Task<decltype(functor())> t;
+    gcl::Task<decltype(functor())> t;
     t.init(std::forward<Functor>(functor));
     return t;
 }
 
 // Creates a new vector of tasks of the same type
 template<typename... Result>
-auto vec(Task<Result>... tasks)
+auto vec(gcl::Task<Result>... tasks)
 {
     using ResultType = std::tuple_element_t<0, std::tuple<Result...>>;
-    return Vec<ResultType>{std::move(tasks)...};
+    return gcl::Vec<ResultType>{std::move(tasks)...};
 }
 
 namespace detail
@@ -152,30 +152,30 @@ void for_each_impl(const F&)
 }
 
 template<typename F, typename Result, typename... TaskTypes>
-void for_each_impl(const F& f, const Task<Result>& t, TaskTypes&&... tasks)
+void for_each_impl(const F& f, const gcl::Task<Result>& t, TaskTypes&&... tasks)
 {
     f(t);
     for_each_impl(f, std::forward<TaskTypes>(tasks)...);
 }
 
 template<typename F, typename Result, typename... TaskTypes>
-void for_each_impl(const F& f, Task<Result>&& t, TaskTypes&&... tasks)
+void for_each_impl(const F& f, gcl::Task<Result>&& t, TaskTypes&&... tasks)
 {
     f(std::move(t));
     for_each_impl(f, std::forward<TaskTypes>(tasks)...);
 }
 
 template<typename F, typename Result, typename... TaskTypes>
-void for_each_impl(const F& f, const Vec<Result>& ts, TaskTypes&&... tasks)
+void for_each_impl(const F& f, const gcl::Vec<Result>& ts, TaskTypes&&... tasks)
 {
-    for (const Task<Result>& t : ts) f(t);
+    for (const gcl::Task<Result>& t : ts) f(t);
     for_each_impl(f, std::forward<TaskTypes>(tasks)...);
 }
 
 template<typename F, typename Result, typename... TaskTypes>
-void for_each_impl(const F& f, Vec<Result>&& ts, TaskTypes&&... tasks)
+void for_each_impl(const F& f, gcl::Vec<Result>&& ts, TaskTypes&&... tasks)
 {
-    for (Task<Result>&& t : ts) f(std::move(t));
+    for (gcl::Task<Result>&& t : ts) f(std::move(t));
     for_each_impl(f, std::forward<TaskTypes>(tasks)...);
 }
 
@@ -185,7 +185,7 @@ void for_each_impl(const F& f, Vec<Result>&& ts, TaskTypes&&... tasks)
 template<typename F, typename... TaskTypes>
 void for_each(const F& f, TaskTypes&&... tasks)
 {
-    detail::for_each_impl(f, std::forward<TaskTypes>(tasks)...);
+    gcl::detail::for_each_impl(f, std::forward<TaskTypes>(tasks)...);
 }
 
 namespace detail
@@ -203,8 +203,8 @@ public:
     void visit_depth(const std::function<void(BaseImpl&)>& f);
     void unvisit();
     void add_parent(BaseImpl& impl);
-    std::size_t id() const;
-    std::vector<Edge> edges();
+    gcl::TaskId id() const;
+    std::vector<gcl::Edge> edges();
 
 protected:
     BaseImpl() = default;
@@ -214,7 +214,7 @@ protected:
 
 struct CollectParents
 {
-    BaseImpl* impl;
+    gcl::detail::BaseImpl* impl;
     template<typename P>
     void operator()(const P& p) const
     {
@@ -229,7 +229,7 @@ struct BaseTask<Result>::Impl : public BaseImpl
     explicit
     Impl(Functor&& functor, Parents... parents)
     {
-        for_each(CollectParents{this}, parents...);
+        gcl::for_each(gcl::detail::CollectParents{this}, parents...);
         m_functor = std::bind(std::forward<Functor>(functor), std::move(parents)...);
     }
 
@@ -269,13 +269,13 @@ template<typename Result>
 template<typename Functor>
 auto BaseTask<Result>::then(Functor&& functor) const
 {
-    auto f = [f = std::forward<Functor>(functor)](Task<Result> t)
+    auto f = [f = std::forward<Functor>(functor)](gcl::Task<Result> t)
              {
                  t.wait();
                  return f(std::move(t));
              };
-    Task<decltype(f(static_cast<const Task<Result>&>(*this)))> t;
-    t.init(std::move(f), static_cast<const Task<Result>&>(*this));
+    gcl::Task<decltype(f(static_cast<const gcl::Task<Result>&>(*this)))> t;
+    t.init(std::move(f), static_cast<const gcl::Task<Result>&>(*this));
     return t;
 }
 
@@ -327,13 +327,13 @@ std::future_status BaseTask<Result>::wait_until(const std::chrono::time_point<Cl
 }
 
 template<typename Result>
-std::size_t BaseTask<Result>::id() const
+gcl::TaskId BaseTask<Result>::id() const
 {
     return m_impl->id();
 }
 
 template<typename Result>
-std::vector<Edge> BaseTask<Result>::edges() const
+std::vector<gcl::Edge> BaseTask<Result>::edges() const
 {
     return m_impl->edges();
 }
@@ -358,33 +358,37 @@ void Task<void>::get() const
     this->m_impl->m_future.get();
 }
 
-// Binds tasks together
+// Ties tasks together which can be of type `Task` and/or `Vec`
 template<typename... Tasks>
-class Bind
+class Tie
 {
 public:
-    // `tasks` can be of type `Task` and/or `Vec`
     explicit
-    Bind(Tasks... tasks)
+    Tie(Tasks... tasks)
         : m_tasks{std::move(tasks)...}
     {}
 
-    // Creates a child to all tasks
+    // Creates a child to all tied tasks
     template<typename Functor>
     auto then(Functor&& functor) const
     {
         return then_impl([f = std::forward<Functor>(functor)](Tasks... ts)
                          {
-                             for_each([](const auto& t){ t.wait(); }, ts...);
+                             gcl::for_each([](const auto& t){ t.wait(); }, ts...);
                              return f(std::move(ts)...);
                          }, std::index_sequence_for<Tasks...>{});
+    }
+
+    const std::tuple<Tasks...>& tasks() const
+    {
+        return m_tasks;
     }
 
 private:
     template<typename Functor, std::size_t... Is>
     auto then_impl(Functor&& functor, std::index_sequence<Is...>) const
     {
-        Task<decltype(functor(std::get<Is>(m_tasks)...))> t;
+        gcl::Task<decltype(functor(std::get<Is>(m_tasks)...))> t;
         t.init(std::forward<Functor>(functor), std::get<Is>(m_tasks)...);
         return t;
     }
@@ -393,16 +397,23 @@ private:
 
 // Binds tasks together where `tasks` can be of type `Task` and/or `Vec`
 template<typename... Tasks>
-auto bind(Tasks... tasks)
+auto tie(Tasks... tasks)
 {
-    return Bind<Tasks...>{std::move(tasks)...};
+    return gcl::Tie<Tasks...>{std::move(tasks)...};
 }
 
-// Creates a child that waits for all tasks to finish
+// Creates a child that waits for all tasks to finish where `tasks` can be of type `Task` and/or `Vec`
 template<typename... Tasks>
-Task<void> when(Tasks... tasks)
+gcl::Task<void> when(Tasks... tasks)
 {
-    return gcl::bind(std::move(tasks)...).then([](Tasks... ts){ for_each([](const auto& t){ t.get(); }, ts...); });
+    return gcl::tie(std::move(tasks)...).then([](Tasks... ts){ gcl::for_each([](const auto& t){ t.get(); }, ts...); });
+}
+
+// Creates a child that waits for all tasks to finish that are part of `Tie`
+template<typename... Tasks>
+gcl::Task<void> when(const Tie<Tasks...>& tie)
+{
+    return tie.then([](Tasks... ts){ gcl::for_each([](const auto& t){ t.get(); }, ts...); });
 }
 
 } // gcl
