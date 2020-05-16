@@ -1,3 +1,8 @@
+// gcl is a tiny graph concurrent library for C++
+// Repo: https://github.com/bloomen/gcl
+// Contributors: Christian Blume
+// License: MIT http://www.opensource.org/licenses/mit-license.php
+
 #pragma once
 
 #include <chrono>
