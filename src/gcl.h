@@ -235,7 +235,11 @@ struct BaseTask<Result>::Impl : public BaseImpl
     Impl(Functor&& functor, Parents... parents)
     {
         gcl::for_each(gcl::detail::CollectParents{this}, parents...);
-        m_functor = std::bind(std::forward<Functor>(functor), std::move(parents)...);
+        m_functor = std::bind([f = std::forward<Functor>(functor)](Parents... ts) -> Result
+                              {
+                                  gcl::for_each([](const auto& t){ t.wait(); }, ts...);
+                                  return f(std::move(ts)...);
+                              }, std::move(parents)...);
     }
 
     void schedule(Exec* const e) override
@@ -274,13 +278,8 @@ template<typename Result>
 template<typename Functor>
 auto BaseTask<Result>::then(Functor&& functor) const
 {
-    auto f = [f = std::forward<Functor>(functor)](gcl::Task<Result> t)
-             {
-                 t.wait();
-                 return f(std::move(t));
-             };
-    gcl::Task<decltype(f(static_cast<const gcl::Task<Result>&>(*this)))> t;
-    t.init(std::move(f), static_cast<const gcl::Task<Result>&>(*this));
+    gcl::Task<decltype(functor(static_cast<const gcl::Task<Result>&>(*this)))> t;
+    t.init(std::forward<Functor>(functor), static_cast<const gcl::Task<Result>&>(*this));
     return t;
 }
 
@@ -377,11 +376,7 @@ public:
     template<typename Functor>
     auto then(Functor&& functor) const
     {
-        return then_impl([f = std::forward<Functor>(functor)](Tasks... ts)
-                         {
-                             gcl::for_each([](const auto& t){ t.wait(); }, ts...);
-                             return f(std::move(ts)...);
-                         }, std::index_sequence_for<Tasks...>{});
+        return then_impl(std::forward<Functor>(functor), std::index_sequence_for<Tasks...>{});
     }
 
     const std::tuple<Tasks...>& tasks() const
@@ -416,7 +411,7 @@ gcl::Task<void> when(Tasks... tasks)
 
 // Creates a child that waits for all tasks to finish that are part of `Tie`
 template<typename... Tasks>
-gcl::Task<void> when(const Tie<Tasks...>& tie)
+gcl::Task<void> when(const gcl::Tie<Tasks...>& tie)
 {
     return tie.then([](Tasks... ts){ gcl::for_each([](const auto& t){ t.get(); }, ts...); });
 }
