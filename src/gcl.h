@@ -102,11 +102,6 @@ protected:
 
 } // detail
 
-template<typename Functor>
-auto task(Functor&& functor);
-template<typename... Tasks>
-class Tie;
-
 // The task type for general result types
 template<typename Result>
 class Task : public gcl::detail::BaseTask<Result>
@@ -115,17 +110,16 @@ public:
     // Returns the task's result. May throw
     const Result& get() const;
 
-private:
-    template<typename F>
-    friend auto task(F&&);
-    template<typename... T>
-    friend class Tie;
-
     template<typename Functor, typename... Parents>
-    void initialize(Functor&& functor, Parents... parents)
+    static Task create(Functor&& functor, Parents... parents)
     {
-        this->init(std::forward<Functor>(functor), std::move(parents)...);
+        Task<Result> t;
+        t.init(std::forward<Functor>(functor), std::move(parents)...);
+        return t;
     }
+
+private:
+    Task() = default;
 };
 
 // The task type for reference result types
@@ -136,17 +130,16 @@ public:
     // Returns the task's result. May throw
     Result& get() const;
 
-private:
-    template<typename F>
-    friend auto task(F&&);
-    template<typename... T>
-    friend class Tie;
-
     template<typename Functor, typename... Parents>
-    void initialize(Functor&& functor, Parents... parents)
+    static Task create(Functor&& functor, Parents... parents)
     {
-        this->init(std::forward<Functor>(functor), std::move(parents)...);
+        Task<Result&> t;
+        t.init(std::forward<Functor>(functor), std::move(parents)...);
+        return t;
     }
+
+private:
+    Task() = default;
 };
 
 // The task type for void result
@@ -157,17 +150,16 @@ public:
     // Returns the task's result. May throw
     void get() const;
 
-private:
-    template<typename F>
-    friend auto task(F&&);
-    template<typename... T>
-    friend class Tie;
-
     template<typename Functor, typename... Parents>
-    void initialize(Functor&& functor, Parents... parents)
+    static Task create(Functor&& functor, Parents... parents)
     {
-        init(std::forward<Functor>(functor), std::move(parents)...);
+        Task<void> t;
+        t.init(std::forward<Functor>(functor), std::move(parents)...);
+        return t;
     }
+
+private:
+    Task() = default;
 };
 
 // Vector to hold multiple tasks of the same type
@@ -178,9 +170,7 @@ using Vec = std::vector<gcl::Task<Result>>;
 template<typename Functor>
 auto task(Functor&& functor)
 {
-    gcl::Task<decltype(functor())> t;
-    t.initialize(std::forward<Functor>(functor));
-    return t;
+    return gcl::Task<decltype(functor())>::create(std::forward<Functor>(functor));
 }
 
 // Creates a new vector of tasks of the same type
@@ -321,9 +311,7 @@ template<typename Result>
 template<typename Functor>
 auto BaseTask<Result>::then(Functor&& functor) const
 {
-    gcl::Task<decltype(functor(static_cast<const gcl::Task<Result>&>(*this)))> t;
-    t.init(std::forward<Functor>(functor), static_cast<const gcl::Task<Result>&>(*this));
-    return t;
+    return gcl::Task<decltype(functor(static_cast<const gcl::Task<Result>&>(*this)))>::create(std::forward<Functor>(functor), static_cast<const gcl::Task<Result>&>(*this));
 }
 
 template<typename Result>
@@ -431,9 +419,7 @@ private:
     template<typename Functor, std::size_t... Is>
     auto then_impl(Functor&& functor, std::index_sequence<Is...>) const
     {
-        gcl::Task<decltype(functor(std::get<Is>(m_tasks)...))> t;
-        t.initialize(std::forward<Functor>(functor), std::get<Is>(m_tasks)...);
-        return t;
+        return gcl::Task<decltype(functor(std::get<Is>(m_tasks)...))>::create(std::forward<Functor>(functor), std::get<Is>(m_tasks)...);
     }
     std::tuple<Tasks...> m_tasks;
 };
