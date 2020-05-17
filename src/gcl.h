@@ -62,8 +62,8 @@ public:
     auto then(Functor&& functor) const;
 
     // Schedules this task and its parents for execution
-    void schedule();
-    void schedule(gcl::Exec& e);
+    void schedule(); // runs functors on the current thread
+    void schedule(gcl::Exec& e); // hands functors to the executor
 
     // Releases this task's result and its parents' results
     void release();
