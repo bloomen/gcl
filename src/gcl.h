@@ -57,7 +57,7 @@ class BaseTask
 {
 public:
 
-    // Creates a child to this task
+    // Creates a child to this task (continuation)
     template<typename Functor>
     auto then(Functor&& functor) const;
 
@@ -402,7 +402,7 @@ public:
         : m_tasks{std::move(tasks)...}
     {}
 
-    // Creates a child to all tied tasks
+    // Creates a child to all tied tasks (continuation)
     template<typename Functor>
     auto then(Functor&& functor) const
     {
