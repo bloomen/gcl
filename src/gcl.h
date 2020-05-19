@@ -188,41 +188,41 @@ template<typename F>
 void for_each_impl(const F&)
 {}
 
-template<typename F, typename Result, typename... TaskTypes>
-void for_each_impl(const F& f, const gcl::Task<Result>& t, TaskTypes&&... tasks)
+template<typename F, typename Result, typename... Tasks>
+void for_each_impl(const F& f, const gcl::Task<Result>& t, Tasks&&... tasks)
 {
     f(t);
-    for_each_impl(f, std::forward<TaskTypes>(tasks)...);
+    for_each_impl(f, std::forward<Tasks>(tasks)...);
 }
 
-template<typename F, typename Result, typename... TaskTypes>
-void for_each_impl(const F& f, gcl::Task<Result>&& t, TaskTypes&&... tasks)
+template<typename F, typename Result, typename... Tasks>
+void for_each_impl(const F& f, gcl::Task<Result>&& t, Tasks&&... tasks)
 {
     f(std::move(t));
-    for_each_impl(f, std::forward<TaskTypes>(tasks)...);
+    for_each_impl(f, std::forward<Tasks>(tasks)...);
 }
 
-template<typename F, typename Result, typename... TaskTypes>
-void for_each_impl(const F& f, const gcl::Vec<Result>& ts, TaskTypes&&... tasks)
+template<typename F, typename Result, typename... Tasks>
+void for_each_impl(const F& f, const gcl::Vec<Result>& ts, Tasks&&... tasks)
 {
     for (const gcl::Task<Result>& t : ts) f(t);
-    for_each_impl(f, std::forward<TaskTypes>(tasks)...);
+    for_each_impl(f, std::forward<Tasks>(tasks)...);
 }
 
-template<typename F, typename Result, typename... TaskTypes>
-void for_each_impl(const F& f, gcl::Vec<Result>&& ts, TaskTypes&&... tasks)
+template<typename F, typename Result, typename... Tasks>
+void for_each_impl(const F& f, gcl::Vec<Result>&& ts, Tasks&&... tasks)
 {
     for (gcl::Task<Result>&& t : ts) f(std::move(t));
-    for_each_impl(f, std::forward<TaskTypes>(tasks)...);
+    for_each_impl(f, std::forward<Tasks>(tasks)...);
 }
 
 } // detail
 
 // Applies functor `f` to each task in `tasks` which can be of type `Task` and/or `Vec`
-template<typename F, typename... TaskTypes>
-void for_each(const F& f, TaskTypes&&... tasks)
+template<typename F, typename... Tasks>
+void for_each(const F& f, Tasks&&... tasks)
 {
-    gcl::detail::for_each_impl(f, std::forward<TaskTypes>(tasks)...);
+    gcl::detail::for_each_impl(f, std::forward<Tasks>(tasks)...);
 }
 
 namespace detail
