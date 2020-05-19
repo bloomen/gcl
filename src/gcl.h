@@ -236,8 +236,31 @@ public:
     virtual void schedule(Exec* e = nullptr) = 0;
     virtual void release() = 0;
 
-    void visit_breadth(const std::function<void(BaseImpl&)>& f);
-    void visit_depth(const std::function<void(BaseImpl&)>& f);
+    template<typename Functor>
+    void visit_breadth(const Functor& f)
+    {
+        const std::vector<BaseImpl*> tasks = tasks_by_breadth();
+        for (auto t = tasks.rbegin(); t != tasks.rend(); ++t)
+        {
+            f(**t);
+        }
+    }
+
+    template<typename Functor>
+    void visit_depth(const Functor& f)
+    {
+        if (m_visited)
+        {
+            return;
+        }
+        for (BaseImpl* const p : m_parents)
+        {
+            p->visit_depth(f);
+        }
+        f(*this);
+        m_visited = true;
+    }
+
     void unvisit();
     void add_parent(BaseImpl& impl);
     gcl::TaskId id() const;
@@ -245,6 +268,9 @@ public:
 
 protected:
     BaseImpl() = default;
+
+    std::vector<BaseImpl*> tasks_by_breadth();
+
     bool m_visited = false;
     std::vector<BaseImpl*> m_parents;
 };

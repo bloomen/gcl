@@ -126,47 +126,6 @@ void Async::execute(std::function<void()> f)
     }
 }
 
-void detail::BaseImpl::visit_breadth(const std::function<void(BaseImpl&)>& f)
-{
-    std::vector<BaseImpl*> tasks;
-    std::queue<BaseImpl*> q;
-    q.emplace(this);
-    tasks.push_back(this);
-    m_visited = true;
-    while (!q.empty())
-    {
-        const BaseImpl* const v = q.front();
-        q.pop();
-        for (BaseImpl* const w : v->m_parents)
-        {
-            if (!w->m_visited)
-            {
-                q.emplace(w);
-                tasks.emplace_back(w);
-                w->m_visited = true;
-            }
-        }
-    }
-    for (auto t = tasks.rbegin(); t != tasks.rend(); ++t)
-    {
-        f(**t);
-    }
-}
-
-void detail::BaseImpl::visit_depth(const std::function<void(BaseImpl&)>& f)
-{
-    if (m_visited)
-    {
-        return;
-    }
-    for (BaseImpl* const p : m_parents)
-    {
-        p->visit_depth(f);
-    }
-    f(*this);
-    m_visited = true;
-}
-
 void detail::BaseImpl::unvisit()
 {
     if (!m_visited)
@@ -202,6 +161,30 @@ std::vector<Edge> detail::BaseImpl::edges()
         }
     });
     return es;
+}
+
+std::vector<detail::BaseImpl*> detail::BaseImpl::tasks_by_breadth()
+{
+    std::vector<BaseImpl*> tasks;
+    std::queue<BaseImpl*> q;
+    q.emplace(this);
+    tasks.push_back(this);
+    m_visited = true;
+    while (!q.empty())
+    {
+        const BaseImpl* const v = q.front();
+        q.pop();
+        for (BaseImpl* const w : v->m_parents)
+        {
+            if (!w->m_visited)
+            {
+                q.emplace(w);
+                tasks.emplace_back(w);
+                w->m_visited = true;
+            }
+        }
+    }
+    return tasks;
 }
 
 } // gcl
