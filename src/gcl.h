@@ -104,9 +104,9 @@ public:
     template<typename Functor, typename... Parents>
     static Task create(Functor&& functor, Parents... parents)
     {
-        Task<Result> t;
-        t.init(std::forward<Functor>(functor), std::move(parents)...);
-        return t;
+        Task<Result> task;
+        task.init(std::forward<Functor>(functor), std::move(parents)...);
+        return task;
     }
 
 private:
@@ -124,9 +124,9 @@ public:
     template<typename Functor, typename... Parents>
     static Task create(Functor&& functor, Parents... parents)
     {
-        Task<Result&> t;
-        t.init(std::forward<Functor>(functor), std::move(parents)...);
-        return t;
+        Task<Result&> task;
+        task.init(std::forward<Functor>(functor), std::move(parents)...);
+        return task;
     }
 
 private:
@@ -144,9 +144,9 @@ public:
     template<typename Functor, typename... Parents>
     static Task create(Functor&& functor, Parents... parents)
     {
-        Task<void> t;
-        t.init(std::forward<Functor>(functor), std::move(parents)...);
-        return t;
+        Task<void> task;
+        task.init(std::forward<Functor>(functor), std::move(parents)...);
+        return task;
     }
 
 private:
@@ -210,8 +210,8 @@ void for_each_impl(const F& f, gcl::Vec<Result>&& ts, Tasks&&... tasks)
 } // detail
 
 // Applies functor `f` to each task in `tasks` which can be of type `Task` and/or `Vec`
-template<typename F, typename... Tasks>
-void for_each(const F& f, Tasks&&... tasks)
+template<typename Functor, typename... Tasks>
+void for_each(const Functor& f, Tasks&&... tasks)
 {
     gcl::detail::for_each_impl(f, std::forward<Tasks>(tasks)...);
 }
@@ -224,31 +224,31 @@ class BaseImpl
 public:
     virtual ~BaseImpl() = default;
 
-    virtual void schedule(Exec* e = nullptr) = 0;
+    virtual void schedule(Exec* exec = nullptr) = 0;
     virtual void release() = 0;
 
-    template<typename Functor>
-    void visit_breadth(const Functor& f)
+    template<typename Visitor>
+    void visit_breadth(const Visitor& visitor)
     {
         const std::vector<BaseImpl*> tasks = tasks_by_breadth();
-        for (auto t = tasks.rbegin(); t != tasks.rend(); ++t)
+        for (auto task = tasks.rbegin(); task != tasks.rend(); ++task)
         {
-            f(**t);
+            visitor(**task);
         }
     }
 
-    template<typename Functor>
-    void visit_depth(const Functor& f)
+    template<typename Visitor>
+    void visit_depth(const Visitor& visitor)
     {
         if (m_visited)
         {
             return;
         }
-        for (BaseImpl* const p : m_parents)
+        for (BaseImpl* const parent : m_parents)
         {
-            p->visit_depth(f);
+            parent->visit_depth(visitor);
         }
-        f(*this);
+        visitor(*this);
         m_visited = true;
     }
 
@@ -269,10 +269,10 @@ protected:
 struct CollectParents
 {
     gcl::detail::BaseImpl* impl;
-    template<typename P>
-    void operator()(const P& p) const
+    template<typename Parent>
+    void operator()(const Parent& parent) const
     {
-        impl->add_parent(*p.m_impl);
+        impl->add_parent(*parent.m_impl);
     }
 };
 
@@ -291,13 +291,13 @@ struct BaseTask<Result>::Impl : BaseImpl
                               }, std::move(parents)...);
     }
 
-    void schedule(Exec* const e) override
+    void schedule(Exec* const exec) override
     {
-        if (e)
+        if (exec)
         {
             auto pkg = std::make_shared<std::packaged_task<Result()>>(m_functor);
             m_future = pkg->get_future();
-            e->execute([pkg = std::move(pkg)]{ (*pkg)(); });
+            exec->execute([pkg = std::move(pkg)]{ (*pkg)(); });
         }
         else
         {
@@ -338,10 +338,10 @@ void BaseTask<Result>::schedule()
 }
 
 template<typename Result>
-void BaseTask<Result>::schedule(Exec& e)
+void BaseTask<Result>::schedule(Exec& exec)
 {
     m_impl->unvisit();
-    m_impl->visit_breadth([&e](BaseImpl& i){ i.schedule(&e); });
+    m_impl->visit_breadth([&exec](BaseImpl& i){ i.schedule(&exec); });
 }
 
 template<typename Result>
