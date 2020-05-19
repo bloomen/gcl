@@ -5,7 +5,6 @@
 
 #pragma once
 
-#include <chrono>
 #include <functional>
 #include <future>
 #include <memory>
@@ -73,14 +72,6 @@ public:
 
     // Waits for the task to finish
     void wait() const;
-
-    // Waits for a given duration `d` for the task to finish
-    template<typename Rep, typename Period>
-    std::future_status wait_for(const std::chrono::duration<Rep, Period>& d) const;
-
-    // Waits until time `tp` for the task to finish
-    template<typename Clock, typename Duration>
-    std::future_status wait_until(const std::chrono::time_point<Clock, Duration>& tp) const;
 
     // Returns the id of the task (unique but changes between runs)
     gcl::TaskId id() const;
@@ -370,20 +361,6 @@ template<typename Result>
 bool BaseTask<Result>::valid() const
 {
     return m_impl->m_future.valid();
-}
-
-template<typename Result>
-template<typename Rep, typename Period>
-std::future_status BaseTask<Result>::wait_for(const std::chrono::duration<Rep, Period>& d) const
-{
-    return m_impl->m_future.wait_for(d);
-}
-
-template<typename Result>
-template<typename Clock, typename Duration>
-std::future_status BaseTask<Result>::wait_until(const std::chrono::time_point<Clock, Duration>& tp) const
-{
-    return m_impl->m_future.wait_until(tp);
 }
 
 template<typename Result>
