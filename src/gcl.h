@@ -299,20 +299,20 @@ struct CollectParents
 template<typename Result>
 struct Evaluate
 {
-    template<typename Functor>
-    void operator()(std::promise<Result>& promise, Functor&& functor) const
+    template<typename Binding>
+    void operator()(std::promise<Result>& promise, Binding& binding) const
     {
-        promise.set_value(std::forward<Functor>(functor)());
+        promise.set_value(binding.evaluate());
     }
 };
 
 template<>
 struct Evaluate<void>
 {
-    template<typename Functor>
-    void operator()(std::promise<void>& promise, Functor&& functor) const
+    template<typename Binding>
+    void operator()(std::promise<void>& promise, Binding& binding) const
     {
-        std::forward<Functor>(functor)();
+        binding.evaluate();
         promise.set_value();
     }
 };
@@ -320,48 +320,31 @@ struct Evaluate<void>
 template<typename Result>
 struct BaseTask<Result>::Impl : BaseImpl
 {
+    // Erases user provided functor and parent types
     class Binding
     {
     public:
         virtual ~Binding() = default;
         virtual Result evaluate() = 0;
-        virtual std::unique_ptr<Binding> clone() const = 0;
     };
 
-    struct BindingFunctor
-    {
-        std::unique_ptr<Binding> binding;
-
-        BindingFunctor() = default;
-        BindingFunctor(const BindingFunctor& o)
-            : binding{o.binding->clone()}
-        {}
-        BindingFunctor& operator=(const BindingFunctor&) = delete;
-
-        Result operator()() const
-        {
-            return binding->evaluate();
-        }
-    };
-
+    // Erases the result type
     class CallableImpl : public gcl::Callable
     {
     public:
         explicit
-        CallableImpl(const BindingFunctor& functor)
-            : m_functor{functor}
+        CallableImpl(Binding& binding)
+            : m_binding{binding}
         {}
-
         std::future<Result> get_future()
         {
             return m_promise.get_future();
         }
-
         void call() override
         {
             try
             {
-                gcl::detail::Evaluate<Result>{}(m_promise, m_functor);
+                gcl::detail::Evaluate<Result>{}(m_promise, m_binding);
             }
             catch (...)
             {
@@ -369,8 +352,8 @@ struct BaseTask<Result>::Impl : BaseImpl
             }
         }
     private:
+        Binding& m_binding;
         std::promise<Result> m_promise;
-        BindingFunctor m_functor;
     };
 
     template<typename Functor, typename... Parents>
@@ -381,11 +364,15 @@ struct BaseTask<Result>::Impl : BaseImpl
 
         struct BindingImpl : Binding
         {
-            Functor functor;
+            std::remove_reference_t<Functor> functor;
             std::tuple<Parents...> parents;
             explicit
-            BindingImpl(std::remove_reference_t<Functor>&& functor,
-                        Parents... parents)
+            BindingImpl(const std::remove_reference_t<Functor>& functor, Parents... parents)
+                : functor{functor}
+                , parents{std::make_tuple(std::move(parents)...)}
+            {}
+            explicit
+            BindingImpl(std::remove_reference_t<Functor>&& functor, Parents... parents)
                 : functor{std::move(functor)}
                 , parents{std::make_tuple(std::move(parents)...)}
             {}
@@ -397,27 +384,22 @@ struct BaseTask<Result>::Impl : BaseImpl
                     return functor(std::move(p)...);
                 }, parents);
             }
-            std::unique_ptr<Binding> clone() const override
-            {
-                return std::make_unique<BindingImpl>(*this);
-            }
         };
 
-        m_functor.binding = std::make_unique<BindingImpl>(std::forward<Functor>(functor),
-                                                          std::move(parents)...);
+        m_binding = std::make_unique<BindingImpl>(std::forward<Functor>(functor), std::move(parents)...);
     }
 
     void schedule(Exec* const exec) override
     {
         if (exec)
         {
-            auto callable = std::make_unique<CallableImpl>(m_functor);
+            auto callable = std::make_unique<CallableImpl>(*m_binding);
             m_future = callable->get_future();
             exec->execute(std::move(callable));
         }
         else
         {
-            CallableImpl callable{m_functor};
+            CallableImpl callable{*m_binding};
             m_future = callable.get_future();
             callable.call();
         }
@@ -428,7 +410,7 @@ struct BaseTask<Result>::Impl : BaseImpl
         m_future = {};
     }
 
-    BindingFunctor m_functor;
+    std::unique_ptr<Binding> m_binding;
     std::shared_future<Result> m_future;
 };
 
