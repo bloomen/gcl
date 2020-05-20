@@ -14,12 +14,20 @@
 namespace gcl
 {
 
+// Callable interface which is created when scheduling and owned by executors
+class Callable
+{
+public:
+    virtual ~Callable() = default;
+    virtual void call() = 0;
+};
+
 // Executor interface for running functions
 class Exec
 {
 public:
     virtual ~Exec() = default;
-    virtual void execute(std::function<void()> f) = 0;
+    virtual void execute(std::unique_ptr<Callable> callable) = 0;
 };
 
 // Async executor for asynchronous execution
@@ -30,7 +38,7 @@ public:
     explicit
     Async(std::size_t n_threads);
     ~Async();
-    void execute(std::function<void()> f) override;
+    void execute(std::unique_ptr<Callable> callable) override;
 private:
     struct Impl;
     std::unique_ptr<Impl> m_impl;
@@ -279,6 +287,21 @@ struct CollectParents
 template<typename Result>
 struct BaseTask<Result>::Impl : BaseImpl
 {
+    class CallableImpl : public Callable
+    {
+    public:
+        explicit
+        CallableImpl(std::shared_ptr<std::packaged_task<Result()>>&& pkg)
+            : m_pkg{std::move(pkg)}
+        {}
+        void call() override
+        {
+            (*m_pkg)();
+        }
+    private:
+        std::shared_ptr<std::packaged_task<Result()>> m_pkg;
+    };
+
     template<typename Functor, typename... Parents>
     explicit
     Impl(Functor&& functor, Parents... parents)
@@ -297,7 +320,7 @@ struct BaseTask<Result>::Impl : BaseImpl
         {
             auto pkg = std::make_shared<std::packaged_task<Result()>>(m_functor);
             m_future = pkg->get_future();
-            exec->execute([pkg = std::move(pkg)]{ (*pkg)(); });
+            exec->execute(std::make_unique<CallableImpl>(std::move(pkg)));
         }
         else
         {

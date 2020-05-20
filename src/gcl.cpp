@@ -48,17 +48,17 @@ struct Async::Impl
         shutdown();
     }
 
-    void execute(std::function<void()> f)
+    void execute(std::unique_ptr<Callable> callable)
     {
         if (m_threads.empty())
         {
-            f();
+            callable->call();
         }
         else
         {
             {
                 std::lock_guard<std::mutex> lock{m_mutex};
-                m_functors.emplace(std::move(f));
+                m_functors.emplace(std::move(callable));
             }
             m_cond_var.notify_one();
         }
@@ -68,7 +68,7 @@ struct Async::Impl
     {
         for (;;)
         {
-            std::function<void()> f;
+            std::unique_ptr<Callable> callable;
             {
                 std::unique_lock<std::mutex> lock{m_mutex};
                 m_cond_var.wait(lock, [this]
@@ -79,10 +79,10 @@ struct Async::Impl
                 {
                     break;
                 }
-                f = std::move(m_functors.front());
+                callable = std::move(m_functors.front());
                 m_functors.pop();
             }
-            f();
+            callable->call();
         }
     }
 
@@ -103,7 +103,7 @@ struct Async::Impl
 private:
     bool m_done = false;
     std::vector<std::thread> m_threads;
-    std::queue<std::function<void()>> m_functors;
+    std::queue<std::unique_ptr<Callable>> m_functors;
     std::condition_variable m_cond_var;
     std::mutex m_mutex;
 };
@@ -114,15 +114,15 @@ Async::Async(const std::size_t n_threads)
 
 Async::~Async() = default;
 
-void Async::execute(std::function<void()> f)
+void Async::execute(std::unique_ptr<Callable> callable)
 {
     if (m_impl)
     {
-        m_impl->execute(std::move(f));
+        m_impl->execute(std::move(callable));
     }
     else
     {
-        f();
+        callable->call();
     }
 }
 
