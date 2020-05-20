@@ -62,11 +62,6 @@ template<typename Result>
 class BaseTask
 {
 public:
-
-    // Creates a child to this task (continuation)
-    template<typename Functor>
-    auto then(Functor&& functor) const;
-
     // Schedules this task and its parents for execution
     void schedule(); // runs functors on the current thread
     void schedule(gcl::Exec& e); // hands functors to the executor
@@ -105,6 +100,10 @@ template<typename Result>
 class Task : public gcl::detail::BaseTask<Result>
 {
 public:
+    // Creates a child to this task (continuation)
+    template<typename Functor>
+    auto then(Functor&& functor) const;
+
     // Returns the task's result. May throw
     const Result& get() const;
 
@@ -125,6 +124,10 @@ template<typename Result>
 class Task<Result&> : public gcl::detail::BaseTask<Result&>
 {
 public:
+    // Creates a child to this task (continuation)
+    template<typename Functor>
+    auto then(Functor&& functor) const;
+
     // Returns the task's result. May throw
     Result& get() const;
 
@@ -145,6 +148,10 @@ template<>
 class Task<void> : public gcl::detail::BaseTask<void>
 {
 public:
+    // Not implemented, sorry!
+    template<typename Functor>
+    auto then(Functor&& functor) const = delete;
+
     // Returns the task's result. May throw
     void get() const;
 
@@ -297,10 +304,45 @@ struct CollectParents
 };
 
 template<typename Result>
+class Binding
+{
+public:
+    virtual ~Binding() = default;
+    virtual Result evaluate() = 0;
+};
+
+template<typename Result, typename Functor, typename... Parents>
+class BindingImpl : public gcl::detail::Binding<Result>
+{
+public:
+    template<typename F>
+    explicit
+    BindingImpl(F&& functor, Parents... parents)
+        : m_functor{std::forward<F>(functor)}
+        , m_parents{std::make_tuple(std::move(parents)...)}
+    {}
+
+    BindingImpl(const BindingImpl&) = delete;
+    BindingImpl& operator=(const BindingImpl&) = delete;
+
+    Result evaluate() override
+    {
+        return gcl::detail::call([this](Parents... p) -> Result
+        {
+            gcl::for_each([](const auto& t){ t.wait(); }, p...);
+            return m_functor(std::move(p)...);
+        }, m_parents);
+    }
+
+private:
+    std::remove_reference_t<Functor> m_functor;
+    std::tuple<Parents...> m_parents;
+};
+
+template<typename Result>
 struct Evaluate
 {
-    template<typename Binding>
-    void operator()(std::promise<Result>& promise, Binding& binding) const
+    void operator()(std::promise<Result>& promise, gcl::detail::Binding<Result>& binding) const
     {
         promise.set_value(binding.evaluate());
     }
@@ -309,8 +351,7 @@ struct Evaluate
 template<>
 struct Evaluate<void>
 {
-    template<typename Binding>
-    void operator()(std::promise<void>& promise, Binding& binding) const
+    void operator()(std::promise<void>& promise, gcl::detail::Binding<void>& binding) const
     {
         binding.evaluate();
         promise.set_value();
@@ -320,26 +361,19 @@ struct Evaluate<void>
 template<typename Result>
 struct BaseTask<Result>::Impl : BaseImpl
 {
-    // Erases user provided functor and parent types
-    class Binding
-    {
-    public:
-        virtual ~Binding() = default;
-        virtual Result evaluate() = 0;
-    };
-
-    // Erases the result type
     class CallableImpl : public gcl::Callable
     {
     public:
         explicit
-        CallableImpl(Binding& binding)
+        CallableImpl(gcl::detail::Binding<Result>& binding)
             : m_binding{binding}
         {}
+
         std::future<Result> get_future()
         {
             return m_promise.get_future();
         }
+
         void call() override
         {
             try
@@ -352,7 +386,7 @@ struct BaseTask<Result>::Impl : BaseImpl
             }
         }
     private:
-        Binding& m_binding;
+        gcl::detail::Binding<Result>& m_binding;
         std::promise<Result> m_promise;
     };
 
@@ -361,32 +395,7 @@ struct BaseTask<Result>::Impl : BaseImpl
     Impl(Functor&& functor, Parents... parents)
     {
         gcl::for_each(gcl::detail::CollectParents{this}, parents...);
-
-        struct BindingImpl : Binding
-        {
-            std::remove_reference_t<Functor> functor;
-            std::tuple<Parents...> parents;
-            explicit
-            BindingImpl(const std::remove_reference_t<Functor>& functor, Parents... parents)
-                : functor{functor}
-                , parents{std::make_tuple(std::move(parents)...)}
-            {}
-            explicit
-            BindingImpl(std::remove_reference_t<Functor>&& functor, Parents... parents)
-                : functor{std::move(functor)}
-                , parents{std::make_tuple(std::move(parents)...)}
-            {}
-            Result evaluate() override
-            {
-                return gcl::detail::call([this](Parents... p) -> Result
-                {
-                    gcl::for_each([](const auto& t){ t.wait(); }, p...);
-                    return functor(std::move(p)...);
-                }, parents);
-            }
-        };
-
-        m_binding = std::make_unique<BindingImpl>(std::forward<Functor>(functor), std::move(parents)...);
+        m_binding = std::make_unique<gcl::detail::BindingImpl<Result, Functor, Parents...>>(std::forward<Functor>(functor), std::move(parents)...);
     }
 
     void schedule(Exec* const exec) override
@@ -410,7 +419,7 @@ struct BaseTask<Result>::Impl : BaseImpl
         m_future = {};
     }
 
-    std::unique_ptr<Binding> m_binding;
+    std::unique_ptr<gcl::detail::Binding<Result>> m_binding;
     std::shared_future<Result> m_future;
 };
 
@@ -419,13 +428,6 @@ template<typename Functor, typename... Parents>
 void BaseTask<Result>::init(Functor&& functor, Parents... parents)
 {
     m_impl = std::make_shared<Impl>(std::forward<Functor>(functor), std::move(parents)...);
-}
-
-template<typename Result>
-template<typename Functor>
-auto BaseTask<Result>::then(Functor&& functor) const
-{
-    return gcl::Task<decltype(functor(static_cast<const gcl::Task<Result>&>(*this)))>::create(std::forward<Functor>(functor), static_cast<const gcl::Task<Result>&>(*this));
 }
 
 template<typename Result>
@@ -475,10 +477,25 @@ std::vector<gcl::Edge> BaseTask<Result>::edges() const
 
 } // detail
 
+
+template<typename Result>
+template<typename Functor>
+auto Task<Result>::then(Functor&& functor) const
+{
+    return gcl::Task<decltype(functor(*this))>::create(std::forward<Functor>(functor), *this);
+}
+
 template<typename Result>
 const Result& Task<Result>::get() const
 {
     return this->m_impl->m_future.get();
+}
+
+template<typename Result>
+template<typename Functor>
+auto Task<Result&>::then(Functor&& functor) const
+{
+    return gcl::Task<decltype(functor(*this))>::create(std::forward<Functor>(functor), *this);
 }
 
 template<typename Result>

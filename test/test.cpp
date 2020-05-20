@@ -139,3 +139,74 @@ TEST_CASE("schedule_twice")
     t.schedule();
     REQUIRE(4 == x);
 }
+
+namespace
+{
+
+struct CopyOnly
+{
+    CopyOnly() = default;
+    CopyOnly(const CopyOnly&) = default;
+    CopyOnly& operator=(const CopyOnly&) = default;
+    int operator()() const
+    {
+        return 42;
+    }
+};
+
+}
+
+TEST_CASE("functor_only_copyable_as_rvalue")
+{
+    auto t = gcl::task(CopyOnly{});
+    t.schedule();
+    REQUIRE(42 == t.get());
+}
+
+TEST_CASE("functor_only_copyable_as_lvalue")
+{
+    CopyOnly functor;
+    auto t = gcl::task(functor);
+    t.schedule();
+    REQUIRE(42 == t.get());
+}
+
+TEST_CASE("functor_only_copyable_as_const_lvalue")
+{
+    const CopyOnly functor;
+    auto t = gcl::task(functor);
+    t.schedule();
+    REQUIRE(42 == t.get());
+}
+
+namespace
+{
+
+struct MoveOnly
+{
+    MoveOnly() = default;
+    MoveOnly(MoveOnly&&) = default;
+    MoveOnly& operator=(MoveOnly&&) = default;
+    int operator()() const
+    {
+        return 42;
+    }
+};
+
+}
+
+TEST_CASE("functor_only_movable")
+{
+    auto t = gcl::task(MoveOnly{});
+    t.schedule();
+    REQUIRE(42 == t.get());
+}
+
+TEST_CASE("task_chaining_with_int")
+{
+    int x = 0;
+    auto f = [&x](auto){ x++; return 0; };
+    auto t = gcl::task([&x]{ x++; return 0; }).then(f).then(f).then(f).then(f);
+    t.schedule();
+    REQUIRE(5 == x);
+}
