@@ -1,11 +1,10 @@
 // gcl is a tiny graph concurrent library for C++
 // Repo: https://github.com/bloomen/gcl
-// Contributors: Christian Blume
+// Author: Christian Blume
 // License: MIT http://www.opensource.org/licenses/mit-license.php
 
 #pragma once
 
-#include <functional>
 #include <future>
 #include <memory>
 #include <tuple>
@@ -22,7 +21,7 @@ public:
     virtual void call() = 0;
 };
 
-// Executor interface for running functions
+// Executor interface for calling objects of Callable
 class Exec
 {
 public:
@@ -183,6 +182,19 @@ auto vec(gcl::Task<Result>... tasks)
 namespace detail
 {
 
+template<typename Functor, typename Tuple, std::size_t... Is>
+decltype(auto) call_impl(Functor&& f, Tuple&& t, std::index_sequence<Is...>)
+{
+    return std::forward<Functor>(f)(std::get<Is>(std::forward<Tuple>(t))...);
+}
+
+template<typename Functor, typename Tuple>
+decltype(auto) call(Functor&& f, Tuple&& t)
+{
+    return call_impl(std::forward<Functor>(f), std::forward<Tuple>(t),
+                     std::make_index_sequence<std::tuple_size<std::remove_reference_t<Tuple>>::value>{});
+}
+
 template<typename F>
 void for_each_impl(const F&)
 {}
@@ -287,7 +299,31 @@ struct CollectParents
 template<typename Result>
 struct BaseTask<Result>::Impl : BaseImpl
 {
-    class CallableImpl : public Callable
+    class Binding
+    {
+    public:
+        virtual ~Binding() = default;
+        virtual Result evaluate() = 0;
+        virtual std::unique_ptr<Binding> clone() const = 0;
+    };
+
+    struct BindingFunctor
+    {
+        std::unique_ptr<Binding> binding;
+
+        BindingFunctor() = default;
+        BindingFunctor(const BindingFunctor& o)
+            : binding{o.binding->clone()}
+        {}
+        BindingFunctor& operator=(const BindingFunctor&) = delete;
+
+        Result operator()() const
+        {
+            return binding->evaluate();
+        }
+    };
+
+    class CallableImpl : public gcl::Callable
     {
     public:
         explicit
@@ -307,11 +343,33 @@ struct BaseTask<Result>::Impl : BaseImpl
     Impl(Functor&& functor, Parents... parents)
     {
         gcl::for_each(gcl::detail::CollectParents{this}, parents...);
-        m_functor = std::bind([f = std::forward<Functor>(functor)](Parents... ts) -> Result
-                              {
-                                  gcl::for_each([](const auto& t){ t.wait(); }, ts...);
-                                  return f(std::move(ts)...);
-                              }, std::move(parents)...);
+
+        struct BindingImpl : Binding
+        {
+            Functor functor;
+            std::tuple<Parents...> parents;
+            explicit
+            BindingImpl(std::remove_reference_t<Functor>&& functor,
+                        Parents... parents)
+                : functor{std::move(functor)}
+                , parents{std::make_tuple(std::move(parents)...)}
+            {}
+            Result evaluate() override
+            {
+                return gcl::detail::call([this](Parents... p) -> Result
+                {
+                    gcl::for_each([](const auto& t){ t.wait(); }, p...);
+                    return functor(std::move(p)...);
+                }, parents);
+            }
+            std::unique_ptr<Binding> clone() const override
+            {
+                return std::make_unique<BindingImpl>(*this);
+            }
+        };
+
+        m_functor.binding = std::make_unique<BindingImpl>(std::forward<Functor>(functor),
+                                                          std::move(parents)...);
     }
 
     void schedule(Exec* const exec) override
@@ -335,7 +393,7 @@ struct BaseTask<Result>::Impl : BaseImpl
         m_future = {};
     }
 
-    std::function<Result()> m_functor;
+    BindingFunctor m_functor;
     std::shared_future<Result> m_future;
 };
 
