@@ -297,6 +297,27 @@ struct CollectParents
 };
 
 template<typename Result>
+struct Evaluate
+{
+    template<typename Functor>
+    void operator()(std::promise<Result>& promise, Functor&& functor) const
+    {
+        promise.set_value(std::forward<Functor>(functor)());
+    }
+};
+
+template<>
+struct Evaluate<void>
+{
+    template<typename Functor>
+    void operator()(std::promise<void>& promise, Functor&& functor) const
+    {
+        std::forward<Functor>(functor)();
+        promise.set_value();
+    }
+};
+
+template<typename Result>
 struct BaseTask<Result>::Impl : BaseImpl
 {
     class Binding
@@ -327,15 +348,29 @@ struct BaseTask<Result>::Impl : BaseImpl
     {
     public:
         explicit
-        CallableImpl(std::shared_ptr<std::packaged_task<Result()>>&& pkg)
-            : m_pkg{std::move(pkg)}
+        CallableImpl(const BindingFunctor& functor)
+            : m_functor{functor}
         {}
+
+        std::future<Result> get_future()
+        {
+            return m_promise.get_future();
+        }
+
         void call() override
         {
-            (*m_pkg)();
+            try
+            {
+                gcl::detail::Evaluate<Result>{}(m_promise, m_functor);
+            }
+            catch (...)
+            {
+                m_promise.set_exception(std::current_exception());
+            }
         }
     private:
-        std::shared_ptr<std::packaged_task<Result()>> m_pkg;
+        std::promise<Result> m_promise;
+        BindingFunctor m_functor;
     };
 
     template<typename Functor, typename... Parents>
@@ -376,15 +411,15 @@ struct BaseTask<Result>::Impl : BaseImpl
     {
         if (exec)
         {
-            auto pkg = std::make_shared<std::packaged_task<Result()>>(m_functor);
-            m_future = pkg->get_future();
-            exec->execute(std::make_unique<CallableImpl>(std::move(pkg)));
+            auto callable = std::make_unique<CallableImpl>(m_functor);
+            m_future = callable->get_future();
+            exec->execute(std::move(callable));
         }
         else
         {
-            std::packaged_task<Result()> pkg{m_functor};
-            m_future = pkg.get_future();
-            pkg();
+            CallableImpl callable{m_functor};
+            m_future = callable.get_future();
+            callable.call();
         }
     }
 
