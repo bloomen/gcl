@@ -65,7 +65,11 @@ public:
 
     // Creates a child to this task (continuation)
     template<typename Functor>
-    auto then(Functor&& functor) const;
+    auto then(Functor&& functor) const &;
+
+    // Creates a child to this task (continuation)
+    template<typename Functor>
+    auto then(Functor&& functor) &&;
 
     // Schedules this task and its parents for execution
     void schedule(); // runs functors on the current thread
@@ -92,7 +96,7 @@ protected:
     BaseTask() = default;
 
     template<typename Functor, typename... Parents>
-    void init(Functor&& functor, Parents... parents);
+    void init(Functor&& functor, Parents&&... parents);
 
     struct Impl;
     std::shared_ptr<Impl> m_impl;
@@ -110,10 +114,10 @@ public:
     const Result& get() const;
 
     template<typename Functor, typename... Parents>
-    static Task create(Functor&& functor, Parents... parents)
+    static Task create(Functor&& functor, Parents&&... parents)
     {
         Task<Result> task;
-        task.init(std::forward<Functor>(functor), std::move(parents)...);
+        task.init(std::forward<Functor>(functor), std::forward<Parents>(parents)...);
         return task;
     }
 
@@ -131,10 +135,10 @@ public:
     Result& get() const;
 
     template<typename Functor, typename... Parents>
-    static Task create(Functor&& functor, Parents... parents)
+    static Task create(Functor&& functor, Parents&&... parents)
     {
         Task<Result&> task;
-        task.init(std::forward<Functor>(functor), std::move(parents)...);
+        task.init(std::forward<Functor>(functor), std::forward<Parents>(parents)...);
         return task;
     }
 
@@ -152,10 +156,10 @@ public:
     void get() const;
 
     template<typename Functor, typename... Parents>
-    static Task create(Functor&& functor, Parents... parents)
+    static Task create(Functor&& functor, Parents&&... parents)
     {
         Task<void> task;
-        task.init(std::forward<Functor>(functor), std::move(parents)...);
+        task.init(std::forward<Functor>(functor), std::forward<Parents>(parents)...);
         return task;
     }
 
@@ -311,11 +315,11 @@ template<typename Result, typename Functor, typename... Parents>
 class BindingImpl : public gcl::detail::Binding<Result>
 {
 public:
-    template<typename F>
+    template<typename F, typename... P>
     explicit
-    BindingImpl(F&& functor, Parents... parents)
+    BindingImpl(F&& functor, P&&... parents)
         : m_functor{std::forward<F>(functor)}
-        , m_parents{std::make_tuple(std::move(parents)...)}
+        , m_parents{std::make_tuple(std::forward<P>(parents)...)}
     {}
 
     BindingImpl(const BindingImpl&) = delete;
@@ -323,16 +327,16 @@ public:
 
     Result evaluate() override
     {
-        return gcl::detail::call([this](Parents... p) -> Result
+        return gcl::detail::call([this](auto&&... p) -> Result
         {
             gcl::for_each([](const auto& t){ t.wait(); }, p...);
-            return m_functor(std::move(p)...);
+            return m_functor(std::forward<decltype(p)>(p)...);
         }, m_parents);
     }
 
 private:
     std::remove_reference_t<Functor> m_functor;
-    std::tuple<Parents...> m_parents;
+    std::tuple<std::remove_reference_t<Parents>...> m_parents;
 };
 
 template<typename Result>
@@ -388,10 +392,10 @@ struct BaseTask<Result>::Impl : BaseImpl
 
     template<typename Functor, typename... Parents>
     explicit
-    Impl(Functor&& functor, Parents... parents)
+    Impl(Functor&& functor, Parents&&... parents)
     {
         gcl::for_each(gcl::detail::CollectParents{this}, parents...);
-        m_binding = std::make_unique<gcl::detail::BindingImpl<Result, Functor, Parents...>>(std::forward<Functor>(functor), std::move(parents)...);
+        m_binding = std::make_unique<gcl::detail::BindingImpl<Result, Functor, Parents...>>(std::forward<Functor>(functor), std::forward<Parents>(parents)...);
     }
 
     void schedule(Exec* const exec) override
@@ -421,16 +425,23 @@ struct BaseTask<Result>::Impl : BaseImpl
 
 template<typename Result>
 template<typename Functor>
-auto BaseTask<Result>::then(Functor&& functor) const
+auto BaseTask<Result>::then(Functor&& functor) const &
 {
     return gcl::Task<decltype(functor(static_cast<const gcl::Task<Result>&>(*this)))>::create(std::forward<Functor>(functor), static_cast<const gcl::Task<Result>&>(*this));
 }
 
 template<typename Result>
-template<typename Functor, typename... Parents>
-void BaseTask<Result>::init(Functor&& functor, Parents... parents)
+template<typename Functor>
+auto BaseTask<Result>::then(Functor&& functor) &&
 {
-    m_impl = std::make_shared<Impl>(std::forward<Functor>(functor), std::move(parents)...);
+    return gcl::Task<decltype(functor(static_cast<gcl::Task<Result>&&>(*this)))>::create(std::forward<Functor>(functor), static_cast<gcl::Task<Result>&&>(*this));
+}
+
+template<typename Result>
+template<typename Functor, typename... Parents>
+void BaseTask<Result>::init(Functor&& functor, Parents&&... parents)
+{
+    m_impl = std::make_shared<Impl>(std::forward<Functor>(functor), std::forward<Parents>(parents)...);
 }
 
 template<typename Result>
@@ -510,7 +521,14 @@ public:
 
     // Creates a child to all tied tasks (continuation)
     template<typename Functor>
-    auto then(Functor&& functor) const
+    auto then(Functor&& functor) const &
+    {
+        return then_impl(std::forward<Functor>(functor), std::index_sequence_for<Tasks...>{});
+    }
+
+    // Creates a child to all tied tasks (continuation)
+    template<typename Functor>
+    auto then(Functor&& functor) &&
     {
         return then_impl(std::forward<Functor>(functor), std::index_sequence_for<Tasks...>{});
     }
@@ -522,9 +540,14 @@ public:
 
 private:
     template<typename Functor, std::size_t... Is>
-    auto then_impl(Functor&& functor, std::index_sequence<Is...>) const
+    auto then_impl(Functor&& functor, std::index_sequence<Is...>) const &
     {
         return gcl::Task<decltype(functor(std::get<Is>(m_tasks)...))>::create(std::forward<Functor>(functor), std::get<Is>(m_tasks)...);
+    }
+    template<typename Functor, std::size_t... Is>
+    auto then_impl(Functor&& functor, std::index_sequence<Is...>) &&
+    {
+        return gcl::Task<decltype(functor(std::get<Is>(m_tasks)...))>::create(std::forward<Functor>(functor), std::get<Is>(std::move(m_tasks))...);
     }
     std::tuple<Tasks...> m_tasks;
 };
