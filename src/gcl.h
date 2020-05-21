@@ -514,9 +514,15 @@ template<typename... Tasks>
 class Tie
 {
 public:
+
     explicit
-    Tie(Tasks... tasks)
-        : m_tasks{std::move(tasks)...}
+    Tie(const Tasks&... tasks)
+        : m_tasks{std::make_tuple(tasks...)}
+    {}
+
+    explicit
+    Tie(Tasks&&... tasks)
+        : m_tasks{std::make_tuple(std::move(tasks)...)}
     {}
 
     // Creates a child to all tied tasks (continuation)
@@ -539,38 +545,41 @@ public:
     }
 
 private:
+
     template<typename Functor, std::size_t... Is>
     auto then_impl(Functor&& functor, std::index_sequence<Is...>) const &
     {
         return gcl::Task<decltype(functor(std::get<Is>(m_tasks)...))>::create(std::forward<Functor>(functor), std::get<Is>(m_tasks)...);
     }
+
     template<typename Functor, std::size_t... Is>
     auto then_impl(Functor&& functor, std::index_sequence<Is...>) &&
     {
         return gcl::Task<decltype(functor(std::get<Is>(m_tasks)...))>::create(std::forward<Functor>(functor), std::get<Is>(std::move(m_tasks))...);
     }
+
     std::tuple<Tasks...> m_tasks;
 };
 
 // Ties tasks together where `tasks` can be of type `Task` and/or `Vec`
 template<typename... Tasks>
-auto tie(Tasks... tasks)
+auto tie(Tasks&&... tasks)
 {
-    return gcl::Tie<Tasks...>{std::move(tasks)...};
+    return gcl::Tie<std::remove_reference_t<Tasks>...>{std::forward<Tasks>(tasks)...};
 }
 
 // Creates a child that waits for all tasks to finish where `tasks` can be of type `Task` and/or `Vec`
 template<typename... Tasks>
 gcl::Task<void> when(Tasks... tasks)
 {
-    return gcl::tie(std::move(tasks)...).then([](Tasks... ts){ gcl::for_each([](const auto& t){ t.get(); }, ts...); });
+    return gcl::tie(std::move(tasks)...).then([](auto&&... ts){ gcl::for_each([](const auto& t){ t.get(); }, std::forward<decltype(ts)>(ts)...); });
 }
 
 // Creates a child that waits for all tasks to finish that are part of `tie`
 template<typename... Tasks>
 gcl::Task<void> when(const gcl::Tie<Tasks...>& tie)
 {
-    return tie.then([](Tasks... ts){ gcl::for_each([](const auto& t){ t.get(); }, ts...); });
+    return tie.then([](auto&&... ts){ gcl::for_each([](const auto& t){ t.get(); }, std::forward<decltype(ts)>(ts)...); });
 }
 
 } // gcl
