@@ -62,6 +62,11 @@ template<typename Result>
 class BaseTask
 {
 public:
+
+    // Creates a child to this task (continuation)
+    template<typename Functor>
+    auto then(Functor&& functor) const;
+
     // Schedules this task and its parents for execution
     void schedule(); // runs functors on the current thread
     void schedule(gcl::Exec& e); // hands functors to the executor
@@ -100,9 +105,6 @@ template<typename Result>
 class Task : public gcl::detail::BaseTask<Result>
 {
 public:
-    // Creates a child to this task (continuation)
-    template<typename Functor>
-    auto then(Functor&& functor) const;
 
     // Returns the task's result. May throw
     const Result& get() const;
@@ -124,9 +126,6 @@ template<typename Result>
 class Task<Result&> : public gcl::detail::BaseTask<Result&>
 {
 public:
-    // Creates a child to this task (continuation)
-    template<typename Functor>
-    auto then(Functor&& functor) const;
 
     // Returns the task's result. May throw
     Result& get() const;
@@ -148,9 +147,6 @@ template<>
 class Task<void> : public gcl::detail::BaseTask<void>
 {
 public:
-    // Not implemented, sorry!
-    template<typename Functor>
-    auto then(Functor&& functor) const = delete;
 
     // Returns the task's result. May throw
     void get() const;
@@ -424,6 +420,13 @@ struct BaseTask<Result>::Impl : BaseImpl
 };
 
 template<typename Result>
+template<typename Functor>
+auto BaseTask<Result>::then(Functor&& functor) const
+{
+    return gcl::Task<decltype(functor(static_cast<const gcl::Task<Result>&>(*this)))>::create(std::forward<Functor>(functor), static_cast<const gcl::Task<Result>&>(*this));
+}
+
+template<typename Result>
 template<typename Functor, typename... Parents>
 void BaseTask<Result>::init(Functor&& functor, Parents... parents)
 {
@@ -477,25 +480,10 @@ std::vector<gcl::Edge> BaseTask<Result>::edges() const
 
 } // detail
 
-
-template<typename Result>
-template<typename Functor>
-auto Task<Result>::then(Functor&& functor) const
-{
-    return gcl::Task<decltype(functor(*this))>::create(std::forward<Functor>(functor), *this);
-}
-
 template<typename Result>
 const Result& Task<Result>::get() const
 {
     return this->m_impl->m_future.get();
-}
-
-template<typename Result>
-template<typename Functor>
-auto Task<Result&>::then(Functor&& functor) const
-{
-    return gcl::Task<decltype(functor(*this))>::create(std::forward<Functor>(functor), *this);
 }
 
 template<typename Result>

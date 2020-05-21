@@ -210,3 +210,12 @@ TEST_CASE("task_chaining_with_int")
     t.schedule();
     REQUIRE(5 == x);
 }
+
+TEST_CASE("task_chaining_with_void")
+{
+    int x = 0;
+    auto f = [&x](gcl::Task<void>){ x++; };
+    auto t = gcl::task([&x]{ x++; }).then(f).then(f).then(f).then(f);
+    t.schedule();
+    REQUIRE(5 == x);
+}
