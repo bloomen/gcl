@@ -344,7 +344,14 @@ struct Evaluate
 {
     void operator()(std::promise<Result>& promise, gcl::detail::Binding<Result>& binding) const
     {
-        promise.set_value(binding.evaluate());
+        try
+        {
+            promise.set_value(binding.evaluate());
+        }
+        catch (...)
+        {
+            promise.set_exception(std::current_exception());
+        }
     }
 };
 
@@ -353,8 +360,15 @@ struct Evaluate<void>
 {
     void operator()(std::promise<void>& promise, gcl::detail::Binding<void>& binding) const
     {
-        binding.evaluate();
-        promise.set_value();
+        try
+        {
+            binding.evaluate();
+            promise.set_value();
+        }
+        catch (...)
+        {
+            promise.set_exception(std::current_exception());
+        }
     }
 };
 
@@ -376,14 +390,7 @@ struct BaseTask<Result>::Impl : BaseImpl
 
         void call() override
         {
-            try
-            {
-                gcl::detail::Evaluate<Result>{}(m_promise, m_binding);
-            }
-            catch (...)
-            {
-                m_promise.set_exception(std::current_exception());
-            }
+            gcl::detail::Evaluate<Result>{}(m_promise, m_binding);
         }
     private:
         gcl::detail::Binding<Result>& m_binding;
@@ -408,9 +415,9 @@ struct BaseTask<Result>::Impl : BaseImpl
         }
         else
         {
-            CallableImpl callable{*m_binding};
-            m_future = callable.get_future();
-            callable.call();
+            std::promise<Result> promise;
+            m_future = promise.get_future();
+            gcl::detail::Evaluate<Result>{}(promise, *m_binding);
         }
     }
 
