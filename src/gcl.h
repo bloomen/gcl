@@ -180,7 +180,15 @@ auto task(Functor&& functor)
 
 // Creates a new vector of tasks of the same type
 template<typename... Result>
-auto vec(gcl::Task<Result>... tasks)
+auto vec(const gcl::Task<Result>&... tasks)
+{
+    using ResultType = std::tuple_element_t<0, std::tuple<Result...>>;
+    return gcl::Vec<ResultType>{tasks...};
+}
+
+// Creates a new vector of tasks of the same type
+template<typename... Result>
+auto vec(gcl::Task<Result>&&... tasks)
 {
     using ResultType = std::tuple_element_t<0, std::tuple<Result...>>;
     return gcl::Vec<ResultType>{std::move(tasks)...};
