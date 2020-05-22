@@ -126,17 +126,17 @@ void Async::execute(std::unique_ptr<Callable> callable)
     }
 }
 
-void detail::BaseImpl::unvisit()
+void detail::BaseImpl::unflag()
 {
-    if (!m_visited)
+    if (!m_flagged)
     {
         return;
     }
     for (BaseImpl* const p : m_parents)
     {
-        p->unvisit();
+        p->unflag();
     }
-    m_visited = false;
+    m_flagged = false;
 }
 
 void detail::BaseImpl::add_parent(BaseImpl& impl)
@@ -149,11 +149,10 @@ TaskId detail::BaseImpl::id() const
     return std::hash<const BaseImpl*>{}(this);
 }
 
-std::vector<Edge> detail::BaseImpl::edges()
+std::vector<Edge> detail::BaseImpl::edges(gcl::Cache& cache)
 {
-    unvisit();
     std::vector<Edge> es;
-    visit_depth([&es](BaseImpl& i)
+    visit(cache, [&es](BaseImpl& i)
     {
         for (const BaseImpl* const p : i.m_parents)
         {
@@ -165,22 +164,23 @@ std::vector<Edge> detail::BaseImpl::edges()
 
 std::vector<detail::BaseImpl*> detail::BaseImpl::tasks_by_breadth()
 {
+    unflag();
     std::vector<BaseImpl*> tasks;
     std::queue<BaseImpl*> q;
     q.emplace(this);
     tasks.push_back(this);
-    m_visited = true;
+    m_flagged = true;
     while (!q.empty())
     {
         const BaseImpl* const v = q.front();
         q.pop();
         for (BaseImpl* const w : v->m_parents)
         {
-            if (!w->m_visited)
+            if (!w->m_flagged)
             {
                 q.emplace(w);
                 tasks.emplace_back(w);
-                w->m_visited = true;
+                w->m_flagged = true;
             }
         }
     }
