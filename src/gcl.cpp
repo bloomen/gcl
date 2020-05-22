@@ -56,10 +56,8 @@ struct Async::Impl
         }
         else
         {
-            {
-                std::lock_guard<std::mutex> lock{m_mutex};
-                m_functors.emplace(std::move(callable));
-            }
+            std::lock_guard<std::mutex> lock{m_mutex};
+            m_functors.emplace(std::move(callable));
             m_cond_var.notify_one();
         }
     }
