@@ -5,15 +5,15 @@
 
 #include "gcl.h"
 
-#include <condition_variable>
-#include <mutex>
 #include <queue>
 #include <thread>
+
+#include <readerwriterqueue.h>
 
 namespace gcl
 {
 
-namespace 
+namespace
 {
 
 class SpScQ
@@ -22,32 +22,23 @@ public:
 
     std::size_t size() const
     {
-        return m_queue.size();
+        return m_queue.size_approx();
     }
 
     void push(std::unique_ptr<Callable> callable) 
     {
-        std::lock_guard<std::mutex> lock{m_mutex};
-        m_queue.push(std::move(callable));
+        m_queue.enqueue(std::move(callable));
     }
 
     std::unique_ptr<Callable> pop()
     {
         std::unique_ptr<Callable> callable;
-        {
-            std::lock_guard<std::mutex> lock{m_mutex};
-            if (!m_queue.empty()) 
-            {
-                callable = std::move(m_queue.front());
-                m_queue.pop();
-            }
-        }
+        m_queue.try_dequeue(callable);
         return callable;
     }
 
 private:
-    std::mutex m_mutex;
-    std::queue<std::unique_ptr<Callable>> m_queue;
+    moodycamel::ReaderWriterQueue<std::unique_ptr<Callable>> m_queue{100};
 };
 
 class Processor
