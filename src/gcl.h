@@ -35,7 +35,7 @@ class Async : public gcl::Exec
 public:
     Async() = default;
     explicit
-    Async(std::size_t n_threads);
+    Async(std::size_t n_threads, std::size_t initial_queue_size = 32);
     ~Async();
     void execute(std::unique_ptr<Callable> callable) override;
 private:

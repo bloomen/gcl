@@ -5,6 +5,7 @@
 
 #include "gcl.h"
 
+#include <forward_list>
 #include <queue>
 #include <thread>
 
@@ -19,6 +20,11 @@ namespace
 class SpScQ
 {
 public:
+
+    explicit 
+    SpScQ(const std::size_t initial_queue_size)
+        : m_queue{initial_queue_size}
+    {}
 
     std::size_t size() const
     {
@@ -38,12 +44,17 @@ public:
     }
 
 private:
-    moodycamel::ReaderWriterQueue<std::unique_ptr<Callable>> m_queue{100};
+    moodycamel::ReaderWriterQueue<std::unique_ptr<Callable>> m_queue;
 };
 
 class Processor
 {
 public:
+
+    explicit 
+    Processor(const std::size_t initial_queue_size)
+        : m_queue{initial_queue_size}
+    {}
 
     std::size_t size() const
     {
@@ -84,9 +95,13 @@ private:
 struct Async::Impl
 {
     explicit
-    Impl(const std::size_t n_threads)
-        : m_processors(n_threads)
-    {}
+    Impl(const std::size_t n_threads, const std::size_t initial_queue_size)
+    {
+        for (std::size_t i = 0; i < n_threads; ++i)
+        {
+            m_processors.emplace_front(initial_queue_size);
+        }
+    }
 
     void execute(std::unique_ptr<Callable> callable)
     {
@@ -96,27 +111,31 @@ struct Async::Impl
         }
         else
         {
-            std::size_t index = 0;
-            std::size_t size = std::numeric_limits<std::size_t>::max();
-            for (std::size_t i = 0; i < m_processors.size(); ++i) 
+            // use the "least busy" processor
+            auto proc = m_processors.begin();
+            auto processor = &*proc;
+            ++proc;
+            auto size = processor->size();
+            while (proc != m_processors.end())
             {
-                const auto current_size = m_processors[i].size();
+                const auto current_size = proc->size();
                 if (current_size < size) 
                 {
                     size = current_size;
-                    index = i;
+                    processor = &*proc;
                 }
+                ++proc;
             }
-            m_processors[index].push(std::move(callable));
+            processor->push(std::move(callable));
         }
     }
 
 private:
-    std::vector<Processor> m_processors;
+    std::forward_list<Processor> m_processors;
 };
 
-Async::Async(const std::size_t n_threads)
-    : m_impl{std::make_unique<Impl>(n_threads)}
+Async::Async(const std::size_t n_threads, const std::size_t initial_queue_size)
+    : m_impl{std::make_unique<Impl>(n_threads, initial_queue_size)}
 {}
 
 Async::~Async() = default;
