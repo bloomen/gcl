@@ -13,97 +13,115 @@
 namespace gcl
 {
 
+namespace 
+{
+
+class SpScQ
+{
+public:
+
+    std::size_t size() const
+    {
+        return m_queue.size();
+    }
+
+    void push(std::unique_ptr<Callable> callable) 
+    {
+        std::lock_guard<std::mutex> lock{m_mutex};
+        m_queue.push(std::move(callable));
+    }
+
+    std::unique_ptr<Callable> pop()
+    {
+        std::unique_ptr<Callable> callable;
+        {
+            std::lock_guard<std::mutex> lock{m_mutex};
+            if (!m_queue.empty()) 
+            {
+                callable = std::move(m_queue.front());
+                m_queue.pop();
+            }
+        }
+        return callable;
+    }
+
+private:
+    std::mutex m_mutex;
+    std::queue<std::unique_ptr<Callable>> m_queue;
+};
+
+class Processor
+{
+public:
+
+    std::size_t size() const
+    {
+        return m_queue.size();
+    }
+
+    void push(std::unique_ptr<Callable> callable) 
+    {
+        m_queue.push(std::move(callable));
+    }
+
+    ~Processor()
+    {
+        m_done = true;
+        m_thread.join();
+    }
+
+private:
+    void worker()
+    {
+        while (!m_done)
+        {
+            if (auto callable = m_queue.pop()) 
+            {
+                callable->call();
+            }
+            std::this_thread::yield();
+        }
+    }
+
+    std::atomic<bool> m_done{false};
+    SpScQ m_queue;
+    std::thread m_thread{&Processor::worker, this};
+};
+
+}
+
 struct Async::Impl
 {
     explicit
     Impl(const std::size_t n_threads)
-    {
-        for (std::size_t i = 0; i < n_threads; ++i)
-        {
-            std::thread thread;
-            try
-            {
-                thread = std::thread{&Impl::worker, this};
-            }
-            catch (...)
-            {
-                shutdown();
-                throw;
-            }
-            try
-            {
-                m_threads.emplace_back(std::move(thread));
-            }
-            catch (...)
-            {
-                shutdown();
-                thread.join();
-                throw;
-            }
-        }
-    }
-
-    ~Impl()
-    {
-        shutdown();
-    }
+        : m_processors(n_threads)
+    {}
 
     void execute(std::unique_ptr<Callable> callable)
     {
-        if (m_threads.empty())
+        if (m_processors.empty())
         {
             callable->call();
         }
         else
         {
-            std::lock_guard<std::mutex> lock{m_mutex};
-            m_functors.emplace(std::move(callable));
-            m_cond_var.notify_one();
-        }
-    }
-
-    void worker()
-    {
-        for (;;)
-        {
-            std::unique_ptr<Callable> callable;
+            std::size_t index = 0;
+            std::size_t size = std::numeric_limits<std::size_t>::max();
+            for (std::size_t i = 0; i < m_processors.size(); ++i) 
             {
-                std::unique_lock<std::mutex> lock{m_mutex};
-                m_cond_var.wait(lock, [this]
+                const auto current_size = m_processors[i].size();
+                if (current_size < size) 
                 {
-                    return m_done || !m_functors.empty();
-                });
-                if (m_done && m_functors.empty())
-                {
-                    break;
+                    size = current_size;
+                    index = i;
                 }
-                callable = std::move(m_functors.front());
-                m_functors.pop();
             }
-            callable->call();
+            m_processors[index].push(std::move(callable));
         }
-    }
-
-    void shutdown()
-    {
-        {
-            std::lock_guard<std::mutex> lock{m_mutex};
-            m_done = true;
-        }
-        m_cond_var.notify_all();
-        for (std::thread& thread : m_threads)
-        {
-            thread.join();
-        }
-        m_threads.clear();
     }
 
 private:
-    bool m_done = false;
-    std::vector<std::thread> m_threads;
-    std::queue<std::unique_ptr<Callable>> m_functors;
-    std::condition_variable m_cond_var;
-    std::mutex m_mutex;
+    std::vector<Processor> m_processors;
 };
 
 Async::Async(const std::size_t n_threads)
@@ -114,14 +132,7 @@ Async::~Async() = default;
 
 void Async::execute(std::unique_ptr<Callable> callable)
 {
-    if (m_impl)
-    {
-        m_impl->execute(std::move(callable));
-    }
-    else
-    {
-        callable->call();
-    }
+    m_impl->execute(std::move(callable));
 }
 
 void detail::BaseImpl::unflag()
