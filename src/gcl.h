@@ -280,15 +280,25 @@ public:
     virtual void release() = 0;
 
     template<typename Visitor>
-    void visit(gcl::Cache& cache, const Visitor& visitor)
+    void visit(gcl::Cache& cache, const Visitor& visitor, const bool reversed = false)
     {
         if (cache.empty() || cache.front() != this)
         {
             cache = tasks_by_breadth();
         }
-        for (auto task = cache.begin(); task != cache.end(); ++task)
+        if (reversed)
         {
-            visitor(**task);
+            for (auto task = cache.rbegin(); task != cache.rend(); ++task)
+            {
+                visitor(**task);
+            }        
+        }
+        else
+        {
+            for (auto task = cache.begin(); task != cache.end(); ++task)
+            {
+                visitor(**task);
+            }
         }
     }
 
@@ -497,7 +507,7 @@ void BaseTask<Result>::init(Functor&& functor, Parents&&... parents)
 template<typename Result>
 void BaseTask<Result>::schedule(gcl::Cache& cache)
 {
-    m_impl->visit(cache, [](BaseImpl& i){ i.schedule(); });
+    m_impl->visit(cache, [](BaseImpl& i){ i.schedule(); }, true);
 }
 
 template<typename Result>
@@ -510,7 +520,7 @@ void BaseTask<Result>::schedule(gcl::Cache& cache, Exec& exec)
 template<typename Result>
 void BaseTask<Result>::release(gcl::Cache& cache)
 {
-    m_impl->visit(cache, [](BaseImpl& i){ i.release(); });
+    m_impl->visit(cache, [](BaseImpl& i){ i.release(); }, true);
 }
 
 template<typename Result>
