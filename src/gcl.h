@@ -284,7 +284,7 @@ public:
         for (auto task = cache.rbegin(); task != cache.rend(); ++task)
         {
             visitor(**task);
-        }        
+        }
     }
 
     const std::vector<gcl::Callable*>& children() const override

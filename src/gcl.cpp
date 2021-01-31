@@ -19,9 +19,14 @@ namespace gcl
 namespace
 {
 
-class MpScQ
+class CompletedQueue // MpSc
 {
 public:
+
+    CompletedQueue() = default;
+
+    CompletedQueue(const CompletedQueue&) = delete;
+    CompletedQueue& operator=(const CompletedQueue&) = delete;
 
     void push(Callable* const it) 
     {
@@ -39,14 +44,17 @@ private:
     moodycamel::ConcurrentQueue<Callable*> m_queue;
 };
 
-class SpScQ
+class ActiveQueue // SpSc
 {
 public:
 
     explicit 
-    SpScQ(const std::size_t initial_queue_size)
+    ActiveQueue(const std::size_t initial_queue_size)
         : m_queue{initial_queue_size}
     {}
+
+    ActiveQueue(const ActiveQueue&) = delete;
+    ActiveQueue& operator=(const ActiveQueue&) = delete;
 
     std::size_t size() const
     {
@@ -74,8 +82,8 @@ class Processor
 public:
 
     explicit 
-    Processor(MpScQ& completions, const std::size_t initial_queue_size)
-        : m_completions{completions}, m_queue{initial_queue_size}
+    Processor(CompletedQueue& completed, const std::size_t initial_queue_size)
+        : m_completed{completed}, m_active{initial_queue_size}
     {}
 
     ~Processor()
@@ -86,12 +94,12 @@ public:
 
     std::size_t size() const
     {
-        return m_queue.size();
+        return m_active.size();
     }
 
     void push(Callable* const callable) 
     {
-        m_queue.push(callable);
+        m_active.push(callable);
     }
 
 private:
@@ -99,18 +107,18 @@ private:
     {
         while (!m_done)
         {
-            if (auto callable = m_queue.pop()) 
+            if (auto callable = m_active.pop()) 
             {
                 callable->call();
-                m_completions.push(callable);
+                m_completed.push(callable);
             }
             std::this_thread::yield();
         }
     }
 
     std::atomic<bool> m_done{false};
-    MpScQ& m_completions;
-    SpScQ m_queue;
+    CompletedQueue& m_completed;
+    ActiveQueue m_active;
     std::thread m_thread{&Processor::worker, this};
 };
 
@@ -123,7 +131,7 @@ struct Async::Impl
     {
         for (std::size_t i = 0; i < n_threads; ++i)
         {
-            m_processors.emplace_front(m_completions, initial_queue_size);
+            m_processors.emplace_front(m_completed, initial_queue_size);
         }
     }
 
@@ -170,9 +178,9 @@ private:
         }
         while (m_running)
         {
-            if (auto comp = m_completions.pop())
+            if (auto completed = m_completed.pop())
             {
-                for (const auto child : comp->children())
+                for (const auto child : completed->children())
                 {
                     child->parent_finished();
                     if (child->is_ready())
@@ -180,7 +188,7 @@ private:
                         run(child);
                     }
                 }
-                m_callables.erase(comp);
+                m_callables.erase(completed);
             }
             std::this_thread::yield();
         }
@@ -209,7 +217,7 @@ private:
     std::atomic<bool> m_running{false};
     std::set<Callable*> m_callables;
     std::forward_list<Processor> m_processors;
-    MpScQ m_completions;
+    CompletedQueue m_completed;
     std::thread m_thread{&Impl::worker, this};
 };
 
