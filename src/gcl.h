@@ -353,10 +353,9 @@ public:
     Result evaluate() override
     {
         return gcl::detail::call([this](auto&&... p) -> Result
-        {
-            gcl::for_each([](const auto& t){ t.wait(); }, p...);
-            return m_functor(std::forward<decltype(p)>(p)...);
-        }, m_parents);
+                                 {
+                                     return m_functor(std::forward<decltype(p)>(p)...);
+                                 }, m_parents);
     }
 
 private:
