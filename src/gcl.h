@@ -179,6 +179,27 @@ private:
     Task() = default;
 };
 
+class Scheduler
+{
+public:
+    explicit
+    Scheduler(const std::size_t n_threads)
+        : m_async{n_threads}
+    {}
+
+    template<typename Result>
+    gcl::Task<Result>& schedule(gcl::Task<Result>& task)
+    {
+        task.schedule(m_cache, m_async);
+        m_async.execute();
+        return task;
+    }
+
+private:
+    gcl::Cache m_cache;
+    gcl::Async m_async;
+};
+
 // Vector to hold multiple tasks of the same type
 template<typename Result>
 using Vec = std::vector<gcl::Task<Result>>;
@@ -469,7 +490,6 @@ template<typename Result>
 void BaseTask<Result>::schedule(gcl::Cache& cache, Exec& exec)
 {
     m_impl->visit(cache, [&exec](BaseImpl& i){ i.schedule(&exec); });
-    exec.execute(); // TODO: move to Scheduler class
 }
 
 template<typename Result>

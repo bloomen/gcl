@@ -40,7 +40,18 @@ TEST_CASE("schedule_using_async")
     gcl::Async async{4};
     gcl::Cache cache;
     t.schedule(cache, async);
+    async.execute();
     t.wait();
+    REQUIRE(55 == t.get());
+}
+
+TEST_CASE("schedule_using_scheduler")
+{
+    auto p1 = gcl::task([]{ return 42; });
+    auto p2 = gcl::task([]{ return 13; });
+    auto t = gcl::tie(p1, p2).then([](auto p1, auto p2){ return p1.get() + p2.get(); });
+    gcl::Scheduler scheduler{4};
+    scheduler.schedule(t).wait();
     REQUIRE(55 == t.get());
 }
 
@@ -52,6 +63,7 @@ TEST_CASE("schedule_with_vec_parents_using_async")
     gcl::Async async{4};
     gcl::Cache cache;
     t.schedule(cache, async);
+    async.execute();
     t.wait();
     REQUIRE(55 == t.get());
 }
@@ -64,6 +76,7 @@ TEST_CASE("schedule_using_reference_type")
     gcl::Async async{4};
     gcl::Cache cache;
     t.schedule(cache, async);
+    async.execute();
     t.wait();
     REQUIRE(42 == p.get());
     REQUIRE(&x == &p.get());
