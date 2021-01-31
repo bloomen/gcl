@@ -131,21 +131,17 @@ struct Async::Impl
     {
         m_running = false;
         m_thread.join();
-        for (const auto callable : m_callables)
-        {
-            delete callable;
-        }
     }
 
-    void push(std::unique_ptr<Callable> callable)
+    void push(Callable& callable)
     {
         if (m_processors.empty())
         {
-            callable->call();
+            callable.call();
         }
         else
         {
-            m_callables.insert(callable.release());
+            m_callables.insert(&callable);
         }
     }
 
@@ -184,7 +180,6 @@ private:
                         run(child);
                     }
                 }
-                delete comp;
                 m_callables.erase(comp);
             }
             std::this_thread::yield();
@@ -224,9 +219,9 @@ Async::Async(const std::size_t n_threads, const std::size_t initial_queue_size)
 
 Async::~Async() = default;
 
-void Async::push(std::unique_ptr<Callable> callable)
+void Async::push(Callable& callable)
 {
-    m_impl->push(std::move(callable));
+    m_impl->push(callable);
 }
 
 void Async::execute()
@@ -269,11 +264,6 @@ std::vector<Edge> detail::BaseImpl::edges(gcl::Cache& cache)
         }
     });
     return es;
-}
-
-Callable* detail::BaseImpl::callable() const
-{
-    return m_callable;
 }
 
 std::vector<detail::BaseImpl*> detail::BaseImpl::tasks_by_breadth()

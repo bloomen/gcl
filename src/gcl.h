@@ -4,7 +4,7 @@
 // License: MIT http://www.opensource.org/licenses/mit-license.php
 
 #pragma once
-#include <cassert>
+
 #include <future>
 #include <memory>
 #include <tuple>
@@ -13,20 +13,15 @@
 namespace gcl
 {
 
-// Callable interface which is created when scheduling and owned by executors
+// Callable interface needed for scheduling
 class Callable
 {
 public:
     virtual ~Callable() = default;
     virtual void call() = 0;
-    //virtual void set_iterator(std::list<std::unique_ptr<Callable>>::iterator* it) = 0;
-    //virtual std::list<std::unique_ptr<Callable>>::iterator* iterator() const = 0;
-    //virtual void set_running() = 0;
-    //virtual bool is_running() const = 0;
-    //virtual void set_finished() = 0; // after this notify scheduling thread which can check if any children are ready
     virtual const std::vector<Callable*>& children() const = 0;
-    virtual void parent_finished() = 0; // called within set_finished(); increments a counter
-    virtual bool is_ready() const = 0; // returns true when all parents finished
+    virtual void parent_finished() = 0;
+    virtual bool is_ready() const = 0;
 };
 
 // Executor interface for calling objects of Callable
@@ -34,7 +29,7 @@ class Exec
 {
 public:
     virtual ~Exec() = default;
-    virtual void push(std::unique_ptr<Callable> callable) = 0;
+    virtual void push(Callable& callable) = 0;
     virtual void execute() = 0;
 };
 
@@ -46,7 +41,7 @@ public:
     explicit
     Async(std::size_t n_threads, std::size_t initial_queue_size = 32);
     ~Async();
-    void push(std::unique_ptr<Callable> callable) override;
+    void push(Callable& callable) override;
     void execute() override;
 private:
     struct Impl;
@@ -271,7 +266,7 @@ void for_each(const Functor& f, Tasks&&... tasks)
 namespace detail
 {
 
-class BaseImpl
+class BaseImpl : public gcl::Callable
 {
 public:
     virtual ~BaseImpl() = default;
@@ -280,33 +275,37 @@ public:
     virtual void release() = 0;
 
     template<typename Visitor>
-    void visit(gcl::Cache& cache, const Visitor& visitor, const bool reversed = false)
+    void visit(gcl::Cache& cache, const Visitor& visitor)
     {
         if (cache.empty() || cache.front() != this)
         {
             cache = tasks_by_breadth();
         }
-        if (reversed)
+        for (auto task = cache.rbegin(); task != cache.rend(); ++task)
         {
-            for (auto task = cache.rbegin(); task != cache.rend(); ++task)
-            {
-                visitor(**task);
-            }        
-        }
-        else
-        {
-            for (auto task = cache.begin(); task != cache.end(); ++task)
-            {
-                visitor(**task);
-            }
-        }
+            visitor(**task);
+        }        
+    }
+
+    const std::vector<gcl::Callable*>& children() const override
+    {
+        return m_children;
+    }
+
+    void parent_finished() override
+    {
+        ++m_parents_ready;
+    }
+
+    bool is_ready() const override
+    {
+        return m_parents_ready == m_parents.size();
     }
 
     void unflag();
     void add_parent(BaseImpl& impl);
     gcl::TaskId id() const;
     std::vector<gcl::Edge> edges(gcl::Cache& cache);
-    Callable* callable() const;
 
 protected:
     BaseImpl() = default;
@@ -315,8 +314,8 @@ protected:
 
     bool m_flagged = false;
     std::vector<BaseImpl*> m_parents;
-    std::vector<BaseImpl*> m_children;
-    Callable* m_callable = nullptr;
+    std::vector<gcl::Callable*> m_children;
+    std::size_t m_parents_ready = 0;
 };
 
 struct CollectParents
@@ -401,48 +400,6 @@ struct Evaluate<void>
 template<typename Result>
 struct BaseTask<Result>::Impl : BaseImpl
 {
-    class CallableImpl : public gcl::Callable
-    {
-    public:
-        CallableImpl(gcl::detail::Binding<Result>& binding, std::vector<Callable*> children, const std::size_t parents_count)
-            : m_binding{binding}
-            , m_children{std::move(children)}
-            , m_parents_count{parents_count}
-        {}
-
-        std::future<Result> get_future()
-        {
-            return m_promise.get_future();
-        }
-
-        void call() override
-        {
-            gcl::detail::Evaluate<Result>{}(m_promise, m_binding);
-        }
-
-        const std::vector<Callable*>& children() const override
-        {
-            return m_children;
-        }
-
-        void parent_finished() override
-        {
-            ++m_parents_ready;
-        }
-
-        bool is_ready() const override
-        {
-            return m_parents_ready == m_parents_count;
-        }
-
-    private:
-        gcl::detail::Binding<Result>& m_binding;
-        std::promise<Result> m_promise;
-        std::vector<Callable*> m_children;
-        std::size_t m_parents_ready = 0;
-        std::size_t m_parents_count = 0;
-    };
-
     template<typename Functor, typename... Parents>
     explicit
     Impl(Functor&& functor, Parents&&... parents)
@@ -453,25 +410,23 @@ struct BaseTask<Result>::Impl : BaseImpl
 
     void schedule(Exec* const exec) override
     {
+        m_parents_ready = 0;
+        m_promise = {};
+        m_future = m_promise.get_future();
         if (exec)
         {
-            std::vector<Callable*> children;
-            for (const auto child : m_children)
-            {
-                assert(child->callable());
-                children.emplace_back(child->callable());
-            }
-            auto callable = std::make_unique<CallableImpl>(*m_binding, std::move(children), m_parents.size());
-            m_future = callable->get_future();
-            m_callable = callable.get();
-            exec->push(std::move(callable));
+            exec->push(*this);
         }
         else
         {
-            std::promise<Result> promise;
-            m_future = promise.get_future();
-            gcl::detail::Evaluate<Result>{}(promise, *m_binding);
+            call();
+            m_parents_ready = m_parents.size();
         }
+    }
+
+    void call() override
+    {
+        gcl::detail::Evaluate<Result>{}(m_promise, *m_binding);
     }
 
     void release() override
@@ -480,6 +435,7 @@ struct BaseTask<Result>::Impl : BaseImpl
     }
 
     std::unique_ptr<gcl::detail::Binding<Result>> m_binding;
+    std::promise<Result> m_promise;
     std::shared_future<Result> m_future;
 };
 
@@ -507,7 +463,7 @@ void BaseTask<Result>::init(Functor&& functor, Parents&&... parents)
 template<typename Result>
 void BaseTask<Result>::schedule(gcl::Cache& cache)
 {
-    m_impl->visit(cache, [](BaseImpl& i){ i.schedule(); }, true);
+    m_impl->visit(cache, [](BaseImpl& i){ i.schedule(); });
 }
 
 template<typename Result>
@@ -520,7 +476,7 @@ void BaseTask<Result>::schedule(gcl::Cache& cache, Exec& exec)
 template<typename Result>
 void BaseTask<Result>::release(gcl::Cache& cache)
 {
-    m_impl->visit(cache, [](BaseImpl& i){ i.release(); }, true);
+    m_impl->visit(cache, [](BaseImpl& i){ i.release(); });
 }
 
 template<typename Result>
