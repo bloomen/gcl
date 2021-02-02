@@ -107,7 +107,7 @@ private:
     {
         while (!m_done)
         {
-            if (auto callable = m_active.pop()) 
+            if (const auto callable = m_active.pop())
             {
                 callable->call();
                 m_completed.push(callable);
@@ -143,11 +143,7 @@ struct Async::Impl
 
     void execute(Callable& callable)
     {
-        if (m_processors.empty())
-        {
-            callable.call();
-        }
-        else if (callable.is_ready())
+        if (callable.is_ready())
         {
             run(&callable);
         }
@@ -158,16 +154,9 @@ private:
     {
         while (!m_done)
         {
-            if (auto completed = m_completed.pop())
+            if (const auto callable = m_completed.pop())
             {
-                for (const auto child : completed->children())
-                {
-                    child->parent_finished();
-                    if (child->is_ready())
-                    {
-                        run(child);
-                    }
-                }
+                on_completed(callable);
             }
             std::this_thread::yield();
         }
@@ -175,22 +164,42 @@ private:
 
     void run(Callable* const callable)
     {
-        // find the "least busy" processor
-        auto proc = m_processors.begin();
-        auto processor = &*proc;
-        ++proc;
-        auto size = processor->size();
-        while (proc != m_processors.end())
+        if (m_processors.empty())
         {
-            const auto current_size = proc->size();
-            if (current_size < size) 
-            {
-                size = current_size;
-                processor = &*proc;
-            }
-            ++proc;
+            callable->call();
+            on_completed(callable);
         }
-        processor->push(callable);
+        else
+        {
+            // find the "least busy" processor
+            auto proc = m_processors.begin();
+            auto processor = &*proc;
+            ++proc;
+            auto size = processor->size();
+            while (proc != m_processors.end())
+            {
+                const auto current_size = proc->size();
+                if (current_size < size)
+                {
+                    size = current_size;
+                    processor = &*proc;
+                }
+                ++proc;
+            }
+            processor->push(callable);
+        }
+    }
+
+    void on_completed(Callable* const callable)
+    {
+        for (const auto child : callable->children())
+        {
+            child->parent_finished();
+            if (child->is_ready())
+            {
+                run(child);
+            }
+        }
     }
 
     std::atomic<bool> m_done{false};
