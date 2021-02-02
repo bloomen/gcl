@@ -147,16 +147,9 @@ struct Async::Impl
         {
             callable.call();
         }
-        else
+        else if (callable.is_ready())
         {
-            if (callable.is_ready())
-            {
-                run(&callable);
-            }
-            else
-            {
-                m_callables.insert(&callable);
-            }
+            run(&callable);
         }
     }
 
@@ -175,7 +168,6 @@ private:
                         run(child);
                     }
                 }
-                m_callables.erase(completed);
             }
             std::this_thread::yield();
         }
@@ -202,7 +194,6 @@ private:
     }
 
     std::atomic<bool> m_done{false};
-    std::set<Callable*> m_callables;
     std::forward_list<Processor> m_processors;
     CompletedQueue m_completed;
     std::thread m_thread{&Impl::worker, this};
