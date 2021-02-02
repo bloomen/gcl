@@ -40,7 +40,6 @@ TEST_CASE("schedule_using_async")
     gcl::Async async{4};
     gcl::Cache cache;
     t.schedule(cache, async);
-    async.execute();
     t.wait();
     REQUIRE(55 == t.get());
 }
@@ -63,7 +62,6 @@ TEST_CASE("schedule_with_vec_parents_using_async")
     gcl::Async async{4};
     gcl::Cache cache;
     t.schedule(cache, async);
-    async.execute();
     t.wait();
     REQUIRE(55 == t.get());
 }
@@ -76,7 +74,6 @@ TEST_CASE("schedule_using_reference_type")
     gcl::Async async{4};
     gcl::Cache cache;
     t.schedule(cache, async);
-    async.execute();
     t.wait();
     REQUIRE(42 == p.get());
     REQUIRE(&x == &p.get());

@@ -29,8 +29,7 @@ class Exec
 {
 public:
     virtual ~Exec() = default;
-    virtual void push(Callable& callable) = 0;
-    virtual void execute() = 0;
+    virtual void execute(Callable& callable) = 0;
 };
 
 // Async executor for asynchronous execution
@@ -41,8 +40,7 @@ public:
     explicit
     Async(std::size_t n_threads, std::size_t initial_queue_size = 32);
     ~Async();
-    void push(Callable& callable) override;
-    void execute() override;
+    void execute(Callable& callable) override;
 private:
     struct Impl;
     std::unique_ptr<Impl> m_impl;
@@ -191,7 +189,6 @@ public:
     gcl::Task<Result>& schedule(gcl::Task<Result>& task)
     {
         task.schedule(m_cache, m_async);
-        m_async.execute();
         return task;
     }
 
@@ -435,7 +432,7 @@ struct BaseTask<Result>::Impl : BaseImpl
         m_future = m_promise.get_future();
         if (exec)
         {
-            exec->push(*this);
+            exec->execute(*this);
         }
         else
         {

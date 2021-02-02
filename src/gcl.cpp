@@ -137,11 +137,11 @@ struct Async::Impl
 
     ~Impl()
     {
-        m_running = false;
+        m_done = true;
         m_thread.join();
     }
 
-    void push(Callable& callable)
+    void execute(Callable& callable)
     {
         if (m_processors.empty())
         {
@@ -149,34 +149,21 @@ struct Async::Impl
         }
         else
         {
-            m_callables.insert(&callable);
+            if (callable.is_ready())
+            {
+                run(&callable);
+            }
+            else
+            {
+                m_callables.insert(&callable);
+            }
         }
-    }
-
-    void execute()
-    {
-        if (m_processors.empty()) 
-        {
-            return;
-        }
-        m_running = true;
     }
 
 private:
     void worker()
     {
-        while (!m_running)
-        {
-            std::this_thread::yield();
-        }
-        for (const auto& callable : m_callables)
-        {
-            if (callable->is_ready())
-            {
-                run(callable);
-            }
-        }
-        while (m_running)
+        while (!m_done)
         {
             if (auto completed = m_completed.pop())
             {
@@ -214,7 +201,7 @@ private:
         processor->push(callable);
     }
 
-    std::atomic<bool> m_running{false};
+    std::atomic<bool> m_done{false};
     std::set<Callable*> m_callables;
     std::forward_list<Processor> m_processors;
     CompletedQueue m_completed;
@@ -227,14 +214,9 @@ Async::Async(const std::size_t n_threads, const std::size_t initial_queue_size)
 
 Async::~Async() = default;
 
-void Async::push(Callable& callable)
+void Async::execute(Callable& callable)
 {
-    m_impl->push(callable);
-}
-
-void Async::execute()
-{
-    m_impl->execute();
+    m_impl->execute(callable);
 }
 
 void detail::BaseImpl::unflag()
