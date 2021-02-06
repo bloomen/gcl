@@ -35,9 +35,8 @@ public:
 class Async : public gcl::Exec
 {
 public:
-    Async() = default;
     explicit
-    Async(std::size_t n_threads, std::size_t initial_processor_size = 32);
+    Async(std::size_t n_threads = 0, std::size_t initial_processor_size = 32);
     ~Async();
     void execute(Callable& callable) override;
 private:
@@ -81,8 +80,7 @@ public:
     auto then(Functor&& functor) &&;
 
     // Schedules this task and its parents for execution
-    void schedule(gcl::Cache& cache); // runs functors on the current thread
-    void schedule(gcl::Cache& cache, gcl::Exec& e); // hands functors to the executor
+    void schedule(gcl::Cache& cache, gcl::Exec& e);
 
     // Releases this task's result and its parents' results
     void release(gcl::Cache& cache);
@@ -176,11 +174,11 @@ private:
     Task() = default;
 };
 
-class Scheduler
+class Graph
 {
 public:
     explicit
-    Scheduler(const std::size_t n_threads)
+    Graph(const std::size_t n_threads = 0)
         : m_async{n_threads}
     {}
 
@@ -288,7 +286,7 @@ class BaseImpl : public gcl::Callable
 public:
     virtual ~BaseImpl() = default;
 
-    virtual void schedule(Exec* exec = nullptr) = 0;
+    virtual void schedule(Exec& exec ) = 0;
     virtual void release() = 0;
 
     template<typename Visitor>
@@ -419,22 +417,14 @@ struct BaseTask<Result>::Impl : BaseImpl
         m_binding = std::make_unique<gcl::detail::BindingImpl<Result, Functor, Parents...>>(std::forward<Functor>(functor), std::forward<Parents>(parents)...);
     }
 
-    void schedule(Exec* const exec) override
+    void schedule(Exec& exec) override
     {
         m_parents_ready = 0;
         m_promise = {};
         m_future = m_promise.get_future();
-        if (exec)
+        if (m_parents.empty())
         {
-            if (m_parents.empty())
-            {
-                exec->execute(*this);
-            }
-        }
-        else
-        {
-            call();
-            m_parents_ready = m_parents.size();
+            exec.execute(*this);
         }
     }
 
@@ -475,15 +465,9 @@ void BaseTask<Result>::init(Functor&& functor, Parents&&... parents)
 }
 
 template<typename Result>
-void BaseTask<Result>::schedule(gcl::Cache& cache)
-{
-    m_impl->visit(cache, [](BaseImpl& i){ i.schedule(); });
-}
-
-template<typename Result>
 void BaseTask<Result>::schedule(gcl::Cache& cache, Exec& exec)
 {
-    m_impl->visit(cache, [&exec](BaseImpl& i){ i.schedule(&exec); });
+    m_impl->visit(cache, [&exec](BaseImpl& i){ i.schedule(exec); });
 }
 
 template<typename Result>
