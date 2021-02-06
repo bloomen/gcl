@@ -432,7 +432,10 @@ struct BaseTask<Result>::Impl : BaseImpl
         m_future = m_promise.get_future();
         if (exec)
         {
-            exec->execute(*this);
+            if (m_parents.empty())
+            {
+                exec->execute(*this);
+            }
         }
         else
         {

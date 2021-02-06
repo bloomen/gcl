@@ -143,30 +143,9 @@ struct Async::Impl
 
     void execute(Callable& callable)
     {
-        if (callable.is_ready())
-        {
-            run(&callable);
-        }
-    }
-
-private:
-    void worker()
-    {
-        while (!m_done)
-        {
-            if (const auto callable = m_completed.pop())
-            {
-                on_completed(callable);
-            }
-            std::this_thread::yield();
-        }
-    }
-
-    void run(Callable* const callable)
-    {
         if (m_processors.empty())
         {
-            callable->call();
+            callable.call();
             on_completed(callable);
         }
         else
@@ -186,18 +165,31 @@ private:
                 }
                 ++proc;
             }
-            processor->push(callable);
+            processor->push(&callable);
         }
     }
 
-    void on_completed(Callable* const callable)
+private:
+    void worker()
     {
-        for (const auto child : callable->children())
+        while (!m_done)
+        {
+            if (const auto callable = m_completed.pop())
+            {
+                on_completed(*callable);
+            }
+            std::this_thread::yield();
+        }
+    }
+
+    void on_completed(Callable& callable)
+    {
+        for (const auto child : callable.children())
         {
             child->parent_finished();
             if (child->is_ready())
             {
-                run(child);
+                execute(*child);
             }
         }
     }
