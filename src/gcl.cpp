@@ -19,16 +19,27 @@ namespace gcl
 namespace
 {
 
-class CompletedQueue // MpSc
+template<typename QueueImpl>
+class LockFreeQueue
 {
 public:
 
-    CompletedQueue() = default;
+    LockFreeQueue() = default;
 
-    CompletedQueue(const CompletedQueue&) = delete;
-    CompletedQueue& operator=(const CompletedQueue&) = delete;
+    explicit
+    LockFreeQueue(const std::size_t initial_size)
+        : m_queue{initial_size}
+    {}
 
-    void push(Callable* const it) 
+    LockFreeQueue(const LockFreeQueue&) = delete;
+    LockFreeQueue& operator=(const LockFreeQueue&) = delete;
+
+    std::size_t size() const
+    {
+        return m_queue.size_approx();
+    }
+
+    void push(Callable* const it)
     {
         m_queue.enqueue(it);
     }
@@ -41,49 +52,19 @@ public:
     }
 
 private:
-    moodycamel::ConcurrentQueue<Callable*> m_queue;
+    QueueImpl m_queue;
 };
 
-class ActiveQueue // SpSc
-{
-public:
-
-    explicit 
-    ActiveQueue(const std::size_t initial_queue_size)
-        : m_queue{initial_queue_size}
-    {}
-
-    ActiveQueue(const ActiveQueue&) = delete;
-    ActiveQueue& operator=(const ActiveQueue&) = delete;
-
-    std::size_t size() const
-    {
-        return m_queue.size_approx();
-    }
-
-    void push(Callable* const callable) 
-    {
-        m_queue.enqueue(callable);
-    }
-
-    Callable* pop()
-    {
-        Callable* callable = nullptr;
-        m_queue.try_dequeue(callable);
-        return callable;
-    }
-
-private:
-    moodycamel::ReaderWriterQueue<Callable*> m_queue;
-};
+using CompletedQueue = LockFreeQueue<moodycamel::ConcurrentQueue<Callable*>>; // MpSc
+using ActiveQueue = LockFreeQueue<moodycamel::ReaderWriterQueue<Callable*>>; // SpSc
 
 class Processor
 {
 public:
 
     explicit 
-    Processor(CompletedQueue& completed, const std::size_t initial_queue_size)
-        : m_completed{completed}, m_active{initial_queue_size}
+    Processor(CompletedQueue& completed, const std::size_t initial_processor_size)
+        : m_completed{completed}, m_active{initial_processor_size}
     {}
 
     ~Processor()
@@ -127,11 +108,11 @@ private:
 struct Async::Impl
 {
     explicit
-    Impl(const std::size_t n_threads, const std::size_t initial_queue_size)
+    Impl(const std::size_t n_threads, const std::size_t initial_processor_size)
     {
         for (std::size_t i = 0; i < n_threads; ++i)
         {
-            m_processors.emplace_front(m_completed, initial_queue_size);
+            m_processors.emplace_front(m_completed, initial_processor_size);
         }
     }
 
@@ -186,8 +167,7 @@ private:
     {
         for (const auto child : callable.children())
         {
-            child->parent_finished();
-            if (child->is_ready())
+            if (child->set_parent_finished())
             {
                 execute(*child);
             }
@@ -200,8 +180,8 @@ private:
     std::thread m_thread{&Impl::worker, this};
 };
 
-Async::Async(const std::size_t n_threads, const std::size_t initial_queue_size)
-    : m_impl{std::make_unique<Impl>(n_threads, initial_queue_size)}
+Async::Async(const std::size_t n_threads, const std::size_t initial_processor_size)
+    : m_impl{std::make_unique<Impl>(n_threads, initial_processor_size)}
 {}
 
 Async::~Async() = default;

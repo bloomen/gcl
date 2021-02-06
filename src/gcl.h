@@ -20,8 +20,7 @@ public:
     virtual ~Callable() = default;
     virtual void call() = 0;
     virtual const std::vector<Callable*>& children() const = 0;
-    virtual void parent_finished() = 0;
-    virtual bool is_ready() const = 0;
+    virtual bool set_parent_finished() = 0;
 };
 
 // Executor interface for calling objects of Callable
@@ -38,7 +37,7 @@ class Async : public gcl::Exec
 public:
     Async() = default;
     explicit
-    Async(std::size_t n_threads, std::size_t initial_queue_size = 32);
+    Async(std::size_t n_threads, std::size_t initial_processor_size = 32);
     ~Async();
     void execute(Callable& callable) override;
 private:
@@ -310,14 +309,9 @@ public:
         return m_children;
     }
 
-    void parent_finished() override
+    bool set_parent_finished() override
     {
-        ++m_parents_ready;
-    }
-
-    bool is_ready() const override
-    {
-        return m_parents_ready == m_parents.size();
+        return ++m_parents_ready == m_parents.size();
     }
 
     void unflag();
