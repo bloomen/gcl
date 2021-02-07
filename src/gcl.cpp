@@ -191,19 +191,6 @@ void Async::execute(Callable& callable)
     m_impl->execute(callable);
 }
 
-void detail::BaseImpl::unflag()
-{
-    if (!m_visited)
-    {
-        return;
-    }
-    for (BaseImpl* const p : m_parents)
-    {
-        p->unflag();
-    }
-    m_visited = false;
-}
-
 void detail::BaseImpl::add_parent(BaseImpl& impl)
 {
     m_parents.emplace_back(&impl);
@@ -227,31 +214,6 @@ std::vector<Edge> detail::BaseImpl::edges(gcl::Cache& cache)
         }
     });
     return es;
-}
-
-std::vector<detail::BaseImpl*> detail::BaseImpl::tasks_by_breadth()
-{
-    unflag();
-    std::vector<BaseImpl*> tasks;
-    std::queue<BaseImpl*> q;
-    q.emplace(this);
-    tasks.push_back(this);
-    m_visited = true;
-    while (!q.empty())
-    {
-        const BaseImpl* const v = q.front();
-        q.pop();
-        for (BaseImpl* const w : v->m_parents)
-        {
-            if (!w->m_visited)
-            {
-                q.emplace(w);
-                tasks.emplace_back(w);
-                w->m_visited = true;
-            }
-        }
-    }
-    return tasks;
 }
 
 } // gcl

@@ -332,15 +332,12 @@ public:
         return ++m_parents_ready == m_parents.size();
     }
 
-    void unflag();
     void add_parent(BaseImpl& impl);
     gcl::TaskId id() const;
     std::vector<gcl::Edge> edges(gcl::Cache& cache);
 
 protected:
     BaseImpl() = default;
-
-    std::vector<BaseImpl*> tasks_by_breadth();
 
     bool m_visited = true;
     std::vector<BaseImpl*> m_parents;
