@@ -286,19 +286,39 @@ class BaseImpl : public gcl::Callable
 public:
     virtual ~BaseImpl() = default;
 
-    virtual void schedule(Exec& exec ) = 0;
+    virtual void reset() = 0;
+    virtual void schedule(Exec& exec) = 0;
     virtual void release() = 0;
 
     template<typename Visitor>
     void visit(gcl::Cache& cache, const Visitor& visitor)
     {
-        if (cache.empty() || cache.front() != this)
+        if (m_visited)
         {
-            cache = tasks_by_breadth();
+            return;
         }
-        for (auto task = cache.rbegin(); task != cache.rend(); ++task)
+        m_visited = true;
+        for (const auto& parent : m_parents)
         {
-            visitor(**task);
+            parent->visit(cache, visitor);
+        }
+        visitor(*this);
+    }
+
+    void unvisit(const bool perform_reset = false)
+    {
+        if (!m_visited)
+        {
+            return;
+        }
+        m_visited = false;
+        if (perform_reset)
+        {
+            reset();
+        }
+        for (const auto& parent : m_parents)
+        {
+            parent->unvisit(perform_reset);
         }
     }
 
@@ -322,7 +342,7 @@ protected:
 
     std::vector<BaseImpl*> tasks_by_breadth();
 
-    bool m_flagged = false;
+    bool m_visited = true;
     std::vector<BaseImpl*> m_parents;
     std::vector<gcl::Callable*> m_children;
     std::size_t m_parents_ready = 0;
@@ -417,11 +437,15 @@ struct BaseTask<Result>::Impl : BaseImpl
         m_binding = std::make_unique<gcl::detail::BindingImpl<Result, Functor, Parents...>>(std::forward<Functor>(functor), std::forward<Parents>(parents)...);
     }
 
-    void schedule(Exec& exec) override
+    void reset() override
     {
         m_parents_ready = 0;
         m_promise = {};
         m_future = m_promise.get_future();
+    }
+
+    void schedule(Exec& exec) override
+    {
         if (m_parents.empty())
         {
             exec.execute(*this);
@@ -467,12 +491,14 @@ void BaseTask<Result>::init(Functor&& functor, Parents&&... parents)
 template<typename Result>
 void BaseTask<Result>::schedule(gcl::Cache& cache, Exec& exec)
 {
+    m_impl->unvisit(true);
     m_impl->visit(cache, [&exec](BaseImpl& i){ i.schedule(exec); });
 }
 
 template<typename Result>
 void BaseTask<Result>::release(gcl::Cache& cache)
 {
+    m_impl->unvisit();
     m_impl->visit(cache, [](BaseImpl& i){ i.release(); });
 }
 
