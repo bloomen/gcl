@@ -28,6 +28,10 @@ build:
   project: C:\projects\gcl\build\gcl.sln
   parallel: true
 
+install:
+  - cd %APPVEYOR_BUILD_FOLDER%
+  - git submodule update --init --recursive
+
 test_script:
   - cmd: cd C:\projects\gcl\build
   - cmd: ctest --verbose

@@ -5,141 +5,223 @@
 
 #include "gcl.h"
 
-#include <condition_variable>
-#include <mutex>
+#include <forward_list>
 #include <queue>
+#include <set>
 #include <thread>
+
+#include <concurrentqueue.h>
+#include <readerwriterqueue.h>
 
 namespace gcl
 {
 
+namespace
+{
+
+template<typename QueueImpl>
+class LockFreeQueue
+{
+public:
+
+    LockFreeQueue() = default;
+
+    explicit
+    LockFreeQueue(const std::size_t initial_size)
+        : m_queue{initial_size}
+    {}
+
+    LockFreeQueue(const LockFreeQueue&) = delete;
+    LockFreeQueue& operator=(const LockFreeQueue&) = delete;
+
+    std::size_t size() const
+    {
+        return m_queue.size_approx();
+    }
+
+    void push(Callable* const it)
+    {
+        m_queue.enqueue(it);
+    }
+
+    Callable* pop()
+    {
+        Callable* callable = nullptr;
+        m_queue.try_dequeue(callable);
+        return callable;
+    }
+
+private:
+    QueueImpl m_queue;
+};
+
+using CompletedQueue = LockFreeQueue<moodycamel::ConcurrentQueue<Callable*>>; // MpSc
+using ActiveQueue = LockFreeQueue<moodycamel::ReaderWriterQueue<Callable*>>; // SpSc
+
+class Processor
+{
+public:
+
+    explicit 
+    Processor(CompletedQueue& completed, const std::size_t initial_processor_size)
+        : m_completed{completed}, m_active{initial_processor_size}
+    {}
+
+    ~Processor()
+    {
+        m_done = true;
+        m_thread.join();
+    }
+
+    std::size_t size() const
+    {
+        return m_active.size();
+    }
+
+    void push(Callable* const callable) 
+    {
+        m_active.push(callable);
+    }
+
+private:
+    void worker()
+    {
+        while (!m_done)
+        {
+            if (const auto callable = m_active.pop())
+            {
+                callable->call();
+                m_completed.push(callable);
+            }
+            std::this_thread::yield();
+        }
+    }
+
+    std::atomic<bool> m_done{false};
+    CompletedQueue& m_completed;
+    ActiveQueue m_active;
+    std::thread m_thread{&Processor::worker, this};
+};
+
+}
+
 struct Async::Impl
 {
     explicit
-    Impl(const std::size_t n_threads)
+    Impl(const std::size_t n_threads, const std::size_t initial_processor_size)
     {
         for (std::size_t i = 0; i < n_threads; ++i)
         {
-            std::thread thread;
-            try
-            {
-                thread = std::thread{&Impl::worker, this};
-            }
-            catch (...)
-            {
-                shutdown();
-                throw;
-            }
-            try
-            {
-                m_threads.emplace_back(std::move(thread));
-            }
-            catch (...)
-            {
-                shutdown();
-                thread.join();
-                throw;
-            }
+            m_processors.emplace_front(m_completed, initial_processor_size);
         }
     }
 
     ~Impl()
     {
-        shutdown();
+        m_done = true;
+        m_thread.join();
     }
 
-    void execute(std::unique_ptr<Callable> callable)
+    void execute(Callable& callable)
     {
-        if (m_threads.empty())
+        if (m_processors.empty())
         {
-            callable->call();
+            callable.call();
+            on_completed(callable);
         }
         else
         {
-            std::lock_guard<std::mutex> lock{m_mutex};
-            m_functors.emplace(std::move(callable));
-            m_cond_var.notify_one();
-        }
-    }
-
-    void worker()
-    {
-        for (;;)
-        {
-            std::unique_ptr<Callable> callable;
+            // find the "least busy" processor
+            auto proc = m_processors.begin();
+            auto processor = &*proc;
+            ++proc;
+            auto size = processor->size();
+            while (proc != m_processors.end())
             {
-                std::unique_lock<std::mutex> lock{m_mutex};
-                m_cond_var.wait(lock, [this]
+                const auto current_size = proc->size();
+                if (current_size < size)
                 {
-                    return m_done || !m_functors.empty();
-                });
-                if (m_done && m_functors.empty())
-                {
-                    break;
+                    size = current_size;
+                    processor = &*proc;
                 }
-                callable = std::move(m_functors.front());
-                m_functors.pop();
+                ++proc;
             }
-            callable->call();
+            processor->push(&callable);
         }
-    }
-
-    void shutdown()
-    {
-        {
-            std::lock_guard<std::mutex> lock{m_mutex};
-            m_done = true;
-        }
-        m_cond_var.notify_all();
-        for (std::thread& thread : m_threads)
-        {
-            thread.join();
-        }
-        m_threads.clear();
     }
 
 private:
-    bool m_done = false;
-    std::vector<std::thread> m_threads;
-    std::queue<std::unique_ptr<Callable>> m_functors;
-    std::condition_variable m_cond_var;
-    std::mutex m_mutex;
+    void worker()
+    {
+        while (!m_done)
+        {
+            if (const auto callable = m_completed.pop())
+            {
+                on_completed(*callable);
+            }
+            std::this_thread::yield();
+        }
+    }
+
+    void on_completed(Callable& callable)
+    {
+        for (const auto child : callable.children())
+        {
+            if (child->set_parent_finished())
+            {
+                execute(*child);
+            }
+        }
+    }
+
+    std::atomic<bool> m_done{false};
+    std::forward_list<Processor> m_processors;
+    CompletedQueue m_completed;
+    std::thread m_thread{&Impl::worker, this};
 };
 
-Async::Async(const std::size_t n_threads)
-    : m_impl{std::make_unique<Impl>(n_threads)}
+Async::Async(const std::size_t n_threads, const std::size_t initial_processor_size)
+    : m_impl{std::make_unique<Impl>(n_threads, initial_processor_size)}
 {}
 
 Async::~Async() = default;
 
-void Async::execute(std::unique_ptr<Callable> callable)
+void Async::execute(Callable& callable)
 {
-    if (m_impl)
-    {
-        m_impl->execute(std::move(callable));
-    }
-    else
-    {
-        callable->call();
-    }
+    m_impl->execute(callable);
 }
 
-void detail::BaseImpl::unflag()
+const std::vector<gcl::Callable*>& detail::BaseImpl::children() const
 {
-    if (!m_flagged)
+    return m_children;
+}
+
+bool detail::BaseImpl::set_parent_finished()
+{
+    return ++m_parents_ready == m_parents.size();
+}
+
+void detail::BaseImpl::unvisit(const bool perform_reset)
+{
+    if (!m_visited)
     {
         return;
     }
-    for (BaseImpl* const p : m_parents)
+    m_visited = false;
+    if (perform_reset)
     {
-        p->unflag();
+        reset();
     }
-    m_flagged = false;
+    for (const auto& parent : m_parents)
+    {
+        parent->unvisit(perform_reset);
+    }
 }
 
 void detail::BaseImpl::add_parent(BaseImpl& impl)
 {
     m_parents.emplace_back(&impl);
+    impl.m_children.emplace_back(this);
 }
 
 TaskId detail::BaseImpl::id() const
@@ -147,10 +229,11 @@ TaskId detail::BaseImpl::id() const
     return std::hash<const BaseImpl*>{}(this);
 }
 
-std::vector<Edge> detail::BaseImpl::edges(gcl::Cache& cache)
+std::vector<Edge> detail::BaseImpl::edges()
 {
+    unvisit();
     std::vector<Edge> es;
-    visit(cache, [&es](BaseImpl& i)
+    visit([&es](BaseImpl& i)
     {
         for (const BaseImpl* const p : i.m_parents)
         {
@@ -158,31 +241,6 @@ std::vector<Edge> detail::BaseImpl::edges(gcl::Cache& cache)
         }
     });
     return es;
-}
-
-std::vector<detail::BaseImpl*> detail::BaseImpl::tasks_by_breadth()
-{
-    unflag();
-    std::vector<BaseImpl*> tasks;
-    std::queue<BaseImpl*> q;
-    q.emplace(this);
-    tasks.push_back(this);
-    m_flagged = true;
-    while (!q.empty())
-    {
-        const BaseImpl* const v = q.front();
-        q.pop();
-        for (BaseImpl* const w : v->m_parents)
-        {
-            if (!w->m_flagged)
-            {
-                q.emplace(w);
-                tasks.emplace_back(w);
-                w->m_flagged = true;
-            }
-        }
-    }
-    return tasks;
 }
 
 } // gcl

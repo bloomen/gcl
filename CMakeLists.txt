@@ -3,6 +3,8 @@ project(gcl)
 enable_testing()
 
 include_directories(src)
+include_directories(concurrentqueue)
+include_directories(readerwriterqueue)
 
 find_package(Threads)
 
