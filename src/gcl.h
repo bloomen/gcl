@@ -56,13 +56,6 @@ struct Edge
 
 namespace detail
 {
-class BaseImpl;
-}
-
-using Cache = std::vector<gcl::detail::BaseImpl*>;
-
-namespace detail
-{
 
 struct CollectParents;
 
@@ -80,10 +73,10 @@ public:
     auto then(Functor&& functor) &&;
 
     // Schedules this task and its parents for execution
-    void schedule(gcl::Cache& cache, gcl::Exec& e);
+    void schedule(gcl::Exec& e);
 
     // Releases this task's result and its parents' results
-    void release(gcl::Cache& cache);
+    void release();
 
     // Returns true if this task contains a valid shared state
     bool valid() const;
@@ -95,7 +88,7 @@ public:
     gcl::TaskId id() const;
 
     // Returns the edges between tasks
-    std::vector<gcl::Edge> edges(gcl::Cache& cache) const;
+    std::vector<gcl::Edge> edges() const;
 
 protected:
     friend struct CollectParents;
@@ -172,26 +165,6 @@ public:
 
 private:
     Task() = default;
-};
-
-class Graph
-{
-public:
-    explicit
-    Graph(const std::size_t n_threads = 0)
-        : m_async{n_threads}
-    {}
-
-    template<typename Result>
-    gcl::Task<Result>& schedule(gcl::Task<Result>& task)
-    {
-        task.schedule(m_cache, m_async);
-        return task;
-    }
-
-private:
-    gcl::Cache m_cache;
-    gcl::Async m_async;
 };
 
 // Vector to hold multiple tasks of the same type
@@ -286,12 +259,15 @@ class BaseImpl : public gcl::Callable
 public:
     virtual ~BaseImpl() = default;
 
+    const std::vector<gcl::Callable*>& children() const override;
+    bool set_parent_finished() override;
+
     virtual void reset() = 0;
     virtual void schedule(Exec& exec) = 0;
     virtual void release() = 0;
 
     template<typename Visitor>
-    void visit(gcl::Cache& cache, const Visitor& visitor)
+    void visit(const Visitor& visitor)
     {
         if (m_visited)
         {
@@ -300,41 +276,16 @@ public:
         m_visited = true;
         for (const auto& parent : m_parents)
         {
-            parent->visit(cache, visitor);
+            parent->visit(visitor);
         }
         visitor(*this);
     }
 
-    void unvisit(const bool perform_reset = false)
-    {
-        if (!m_visited)
-        {
-            return;
-        }
-        m_visited = false;
-        if (perform_reset)
-        {
-            reset();
-        }
-        for (const auto& parent : m_parents)
-        {
-            parent->unvisit(perform_reset);
-        }
-    }
-
-    const std::vector<gcl::Callable*>& children() const override
-    {
-        return m_children;
-    }
-
-    bool set_parent_finished() override
-    {
-        return ++m_parents_ready == m_parents.size();
-    }
+    void unvisit(bool perform_reset = false);
 
     void add_parent(BaseImpl& impl);
     gcl::TaskId id() const;
-    std::vector<gcl::Edge> edges(gcl::Cache& cache);
+    std::vector<gcl::Edge> edges();
 
 protected:
     BaseImpl() = default;
@@ -486,17 +437,17 @@ void BaseTask<Result>::init(Functor&& functor, Parents&&... parents)
 }
 
 template<typename Result>
-void BaseTask<Result>::schedule(gcl::Cache& cache, Exec& exec)
+void BaseTask<Result>::schedule(Exec& exec)
 {
     m_impl->unvisit(true);
-    m_impl->visit(cache, [&exec](BaseImpl& i){ i.schedule(exec); });
+    m_impl->visit([&exec](BaseImpl& i){ i.schedule(exec); });
 }
 
 template<typename Result>
-void BaseTask<Result>::release(gcl::Cache& cache)
+void BaseTask<Result>::release()
 {
     m_impl->unvisit();
-    m_impl->visit(cache, [](BaseImpl& i){ i.release(); });
+    m_impl->visit([](BaseImpl& i){ i.release(); });
 }
 
 template<typename Result>
@@ -518,9 +469,9 @@ gcl::TaskId BaseTask<Result>::id() const
 }
 
 template<typename Result>
-std::vector<gcl::Edge> BaseTask<Result>::edges(gcl::Cache& cache) const
+std::vector<gcl::Edge> BaseTask<Result>::edges() const
 {
-    return m_impl->edges(cache);
+    return m_impl->edges();
 }
 
 } // detail

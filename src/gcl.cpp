@@ -191,6 +191,33 @@ void Async::execute(Callable& callable)
     m_impl->execute(callable);
 }
 
+const std::vector<gcl::Callable*>& detail::BaseImpl::children() const
+{
+    return m_children;
+}
+
+bool detail::BaseImpl::set_parent_finished()
+{
+    return ++m_parents_ready == m_parents.size();
+}
+
+void detail::BaseImpl::unvisit(const bool perform_reset)
+{
+    if (!m_visited)
+    {
+        return;
+    }
+    m_visited = false;
+    if (perform_reset)
+    {
+        reset();
+    }
+    for (const auto& parent : m_parents)
+    {
+        parent->unvisit(perform_reset);
+    }
+}
+
 void detail::BaseImpl::add_parent(BaseImpl& impl)
 {
     m_parents.emplace_back(&impl);
@@ -202,11 +229,11 @@ TaskId detail::BaseImpl::id() const
     return std::hash<const BaseImpl*>{}(this);
 }
 
-std::vector<Edge> detail::BaseImpl::edges(gcl::Cache& cache)
+std::vector<Edge> detail::BaseImpl::edges()
 {
     unvisit();
     std::vector<Edge> es;
-    visit(cache, [&es](BaseImpl& i)
+    visit([&es](BaseImpl& i)
     {
         for (const BaseImpl* const p : i.m_parents)
         {
