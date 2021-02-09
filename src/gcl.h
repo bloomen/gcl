@@ -593,4 +593,23 @@ gcl::Task<void> when(const gcl::Tie<Tasks...>& tie)
     return tie.then([](auto&&... ts){ gcl::detail::for_each([](const auto& t){ t.get(); }, std::forward<decltype(ts)>(ts)...); });
 }
 
+// Can be used to facilitate task canceling
+class CancelToken
+{
+public:
+    // Called from outside the task
+    void set_canceled(const bool canceled = true)
+    {
+        m_token = canceled;
+    }
+
+    // Checked from within a task's functor
+    bool is_canceled() const
+    {
+        return m_token.load();
+    }
+private:
+    std::atomic<bool> m_token{false};
+};
+
 } // gcl
