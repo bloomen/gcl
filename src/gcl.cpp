@@ -165,6 +165,13 @@ private:
 
     void on_completed(Callable& callable)
     {
+        for (const auto parent : callable.parents())
+        {
+            if (parent->set_child_finished())
+            {
+                parent->auto_release();
+            }
+        }
         for (const auto child : callable.children())
         {
             if (child->set_parent_finished())
@@ -191,6 +198,11 @@ void Async::execute(Callable& callable)
     m_impl->execute(callable);
 }
 
+const std::vector<gcl::detail::BaseImpl*>& detail::BaseImpl::parents() const
+{
+    return m_parents;
+}
+
 const std::vector<gcl::Callable*>& detail::BaseImpl::children() const
 {
     return m_children;
@@ -199,6 +211,24 @@ const std::vector<gcl::Callable*>& detail::BaseImpl::children() const
 bool detail::BaseImpl::set_parent_finished()
 {
     return ++m_parents_ready == m_parents.size();
+}
+
+bool detail::BaseImpl::set_child_finished()
+{
+    return ++m_children_ready == m_children.size();
+}
+
+void detail::BaseImpl::auto_release()
+{
+    if (m_auto_release)
+    {
+        release();
+    }
+}
+
+void detail::BaseImpl::set_auto_release(const bool auto_release)
+{
+    m_auto_release = auto_release;
 }
 
 void detail::BaseImpl::unvisit(const bool perform_reset)

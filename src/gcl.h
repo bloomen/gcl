@@ -13,14 +13,22 @@
 namespace gcl
 {
 
+namespace detail
+{
+class BaseImpl;
+}
+
 // Callable interface needed for scheduling
 class Callable
 {
 public:
     virtual ~Callable() = default;
     virtual void call() = 0;
+    virtual const std::vector<gcl::detail::BaseImpl*>& parents() const = 0;
     virtual const std::vector<Callable*>& children() const = 0;
     virtual bool set_parent_finished() = 0;
+    virtual bool set_child_finished() = 0;
+    virtual void auto_release() = 0;
 };
 
 // Executor interface for calling objects of Callable
@@ -74,6 +82,9 @@ public:
 
     // Schedules this task and its parents for execution
     void schedule(gcl::Exec& e);
+
+    // Auto-release means automatic result clean-up once a parent's result was fully consumed
+    void set_auto_release(bool auto_release);
 
     // Releases this task's result and its parents' results
     void release();
@@ -265,12 +276,17 @@ class BaseImpl : public gcl::Callable
 public:
     virtual ~BaseImpl() = default;
 
+    const std::vector<gcl::detail::BaseImpl*>& parents() const override;
     const std::vector<gcl::Callable*>& children() const override;
     bool set_parent_finished() override;
+    bool set_child_finished() override;
+    void auto_release() override;
 
     virtual void reset() = 0;
     virtual void schedule(Exec& exec) = 0;
     virtual void release() = 0;
+
+    void set_auto_release(bool auto_release);
 
     template<typename Visitor>
     void visit(const Visitor& visitor)
@@ -296,10 +312,12 @@ public:
 protected:
     BaseImpl() = default;
 
+    std::atomic<bool> m_auto_release{false};
     bool m_visited = true;
     std::vector<BaseImpl*> m_parents;
     std::vector<gcl::Callable*> m_children;
     std::size_t m_parents_ready = 0;
+    std::size_t m_children_ready = 0;
 };
 
 struct CollectParents
@@ -394,6 +412,7 @@ struct BaseTask<Result>::Impl : BaseImpl
     void reset() override
     {
         m_parents_ready = 0;
+        m_children_ready = 0;
         m_promise = {};
         m_future = m_promise.get_future();
     }
@@ -447,6 +466,13 @@ void BaseTask<Result>::schedule(Exec& exec)
 {
     m_impl->unvisit(true);
     m_impl->visit([&exec](BaseImpl& i){ i.schedule(exec); });
+}
+
+template<typename Result>
+void BaseTask<Result>::set_auto_release(const bool auto_release)
+{
+    m_impl->unvisit();
+    m_impl->visit([auto_release](BaseImpl& i){ i.set_auto_release(auto_release); });
 }
 
 template<typename Result>

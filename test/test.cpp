@@ -44,6 +44,19 @@ TEST_CASE("schedule_and_cancel")
     REQUIRE(-1 == t.get());
 }
 
+TEST_CASE("schedule_and_auto_release")
+{
+    auto p1 = gcl::task([]{ return 42; });
+    auto p2 = gcl::task([]{ return 13; });
+    auto t = gcl::tie(p1, p2).then([](auto p1, auto p2){
+        return p1.get() + p2.get();
+    });
+    t.set_auto_release(true);
+    gcl::Async async;
+    t.schedule(async);
+    REQUIRE(55 == t.get());
+}
+
 TEST_CASE("schedule_with_vec_parents")
 {
     auto p1 = gcl::task([]{ return 42; });
