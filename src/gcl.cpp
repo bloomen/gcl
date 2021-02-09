@@ -39,24 +39,24 @@ public:
         return m_queue.size_approx();
     }
 
-    void push(Callable* const it)
+    void push(ITask* const task)
     {
-        m_queue.enqueue(it);
+        m_queue.enqueue(task);
     }
 
-    Callable* pop()
+    ITask* pop()
     {
-        Callable* callable = nullptr;
-        m_queue.try_dequeue(callable);
-        return callable;
+        ITask* task = nullptr;
+        m_queue.try_dequeue(task);
+        return task;
     }
 
 private:
     QueueImpl m_queue;
 };
 
-using CompletedQueue = LockFreeQueue<moodycamel::ConcurrentQueue<Callable*>>; // MpSc
-using ActiveQueue = LockFreeQueue<moodycamel::ReaderWriterQueue<Callable*>>; // SpSc
+using CompletedQueue = LockFreeQueue<moodycamel::ConcurrentQueue<ITask*>>; // MpSc
+using ActiveQueue = LockFreeQueue<moodycamel::ReaderWriterQueue<ITask*>>; // SpSc
 
 class Processor
 {
@@ -78,9 +78,9 @@ public:
         return m_active.size();
     }
 
-    void push(Callable* const callable) 
+    void push(ITask* const task)
     {
-        m_active.push(callable);
+        m_active.push(task);
     }
 
 private:
@@ -88,10 +88,10 @@ private:
     {
         while (!m_done)
         {
-            if (const auto callable = m_active.pop())
+            if (const auto task = m_active.pop())
             {
-                callable->call();
-                m_completed.push(callable);
+                task->call();
+                m_completed.push(task);
             }
             std::this_thread::yield();
         }
@@ -122,12 +122,12 @@ struct Async::Impl
         m_thread.join();
     }
 
-    void execute(Callable& callable)
+    void execute(ITask& task)
     {
         if (m_processors.empty())
         {
-            callable.call();
-            on_completed(callable);
+            task.call();
+            on_completed(task);
         }
         else
         {
@@ -146,7 +146,7 @@ struct Async::Impl
                 }
                 ++proc;
             }
-            processor->push(&callable);
+            processor->push(&task);
         }
     }
 
@@ -155,24 +155,24 @@ private:
     {
         while (!m_done)
         {
-            if (const auto callable = m_completed.pop())
+            if (const auto task = m_completed.pop())
             {
-                on_completed(*callable);
+                on_completed(*task);
             }
             std::this_thread::yield();
         }
     }
 
-    void on_completed(Callable& callable)
+    void on_completed(ITask& task)
     {
-        for (const auto parent : callable.parents())
+        for (const auto parent : task.parents())
         {
             if (parent->set_child_finished())
             {
                 parent->auto_release();
             }
         }
-        for (const auto child : callable.children())
+        for (const auto child : task.children())
         {
             if (child->set_parent_finished())
             {
@@ -193,17 +193,17 @@ Async::Async(const std::size_t n_threads, const std::size_t initial_processor_si
 
 Async::~Async() = default;
 
-void Async::execute(Callable& callable)
+void Async::execute(ITask& task)
 {
-    m_impl->execute(callable);
+    m_impl->execute(task);
 }
 
-const std::vector<gcl::detail::BaseImpl*>& detail::BaseImpl::parents() const
+const std::vector<gcl::ITask*>& detail::BaseImpl::parents() const
 {
     return m_parents;
 }
 
-const std::vector<gcl::Callable*>& detail::BaseImpl::children() const
+const std::vector<gcl::ITask*>& detail::BaseImpl::children() const
 {
     return m_children;
 }
@@ -242,9 +242,9 @@ void detail::BaseImpl::unvisit(const bool perform_reset)
     {
         reset();
     }
-    for (const auto& parent : m_parents)
+    for (const auto parent : m_parents)
     {
-        parent->unvisit(perform_reset);
+        static_cast<BaseImpl*>(parent)->unvisit(perform_reset);
     }
 }
 
@@ -265,9 +265,9 @@ std::vector<Edge> detail::BaseImpl::edges()
     std::vector<Edge> es;
     visit([&es](BaseImpl& i)
     {
-        for (const BaseImpl* const p : i.m_parents)
+        for (const auto p : i.m_parents)
         {
-            es.push_back({p->id(), i.id()});
+            es.push_back({static_cast<BaseImpl*>(p)->id(), i.id()});
         }
     });
     return es;

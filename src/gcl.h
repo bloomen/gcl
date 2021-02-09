@@ -13,30 +13,25 @@
 namespace gcl
 {
 
-namespace detail
-{
-class BaseImpl;
-}
-
-// Callable interface needed for scheduling
-class Callable
+// Task interface needed for scheduling
+class ITask
 {
 public:
-    virtual ~Callable() = default;
+    virtual ~ITask() = default;
     virtual void call() = 0;
-    virtual const std::vector<gcl::detail::BaseImpl*>& parents() const = 0;
-    virtual const std::vector<Callable*>& children() const = 0;
+    virtual const std::vector<ITask*>& parents() const = 0;
+    virtual const std::vector<ITask*>& children() const = 0;
     virtual bool set_parent_finished() = 0;
     virtual bool set_child_finished() = 0;
     virtual void auto_release() = 0;
 };
 
-// Executor interface for calling objects of Callable
+// Executor interface for running tasks
 class Exec
 {
 public:
     virtual ~Exec() = default;
-    virtual void execute(Callable& callable) = 0;
+    virtual void execute(ITask& task) = 0;
 };
 
 // Async executor for asynchronous execution
@@ -46,7 +41,7 @@ public:
     explicit
     Async(std::size_t n_threads = 0, std::size_t initial_processor_size = 32);
     ~Async();
-    void execute(Callable& callable) override;
+    void execute(ITask& task) override;
 private:
     struct Impl;
     std::unique_ptr<Impl> m_impl;
@@ -271,13 +266,13 @@ void for_each(const Functor& f, Tasks&&... tasks)
     gcl::detail::for_each_impl(f, std::forward<Tasks>(tasks)...);
 }
 
-class BaseImpl : public gcl::Callable
+class BaseImpl : public gcl::ITask
 {
 public:
     virtual ~BaseImpl() = default;
 
-    const std::vector<gcl::detail::BaseImpl*>& parents() const override;
-    const std::vector<gcl::Callable*>& children() const override;
+    const std::vector<gcl::ITask*>& parents() const override;
+    const std::vector<gcl::ITask*>& children() const override;
     bool set_parent_finished() override;
     bool set_child_finished() override;
     void auto_release() override;
@@ -298,7 +293,7 @@ public:
         m_visited = true;
         for (const auto& parent : m_parents)
         {
-            parent->visit(visitor);
+            static_cast<BaseImpl*>(parent)->visit(visitor);
         }
         visitor(*this);
     }
@@ -314,8 +309,8 @@ protected:
 
     std::atomic<bool> m_auto_release{false};
     bool m_visited = true;
-    std::vector<BaseImpl*> m_parents;
-    std::vector<gcl::Callable*> m_children;
+    std::vector<gcl::ITask*> m_parents;
+    std::vector<gcl::ITask*> m_children;
     std::size_t m_parents_ready = 0;
     std::size_t m_children_ready = 0;
 };
