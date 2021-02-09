@@ -13,14 +13,22 @@
 namespace gcl
 {
 
+namespace detail
+{
+class BaseImpl;
+}
+
 // Callable interface needed for scheduling
 class Callable
 {
 public:
     virtual ~Callable() = default;
     virtual void call() = 0;
+    virtual const std::vector<gcl::detail::BaseImpl*>& parents() const = 0;
     virtual const std::vector<Callable*>& children() const = 0;
     virtual bool set_parent_finished() = 0;
+    virtual bool set_child_finished() = 0;
+    virtual void auto_release() = 0;
 };
 
 // Executor interface for calling objects of Callable
@@ -75,14 +83,28 @@ public:
     // Schedules this task and its parents for execution
     void schedule(gcl::Exec& e);
 
+    // Auto-release means automatic result clean-up once a parent's result was fully consumed
+    void set_auto_release(bool auto_release);
+
     // Releases this task's result and its parents' results
     void release();
 
     // Returns true if this task contains a valid shared state
     bool valid() const;
 
-    // Waits for the task to finish
+    // Waits for the task to finish (UB if valid == false)
     void wait() const;
+
+    // Waits for the given duration for the task to finish (UB if valid == false)
+    template<typename Rep, typename Period>
+    std::future_status wait_for(const std::chrono::duration<Rep, Period>& duration) const;
+
+    // Waits until the given time for the task to finish (UB if valid == false)
+    template<typename Clock, typename Duration>
+    std::future_status wait_until(const std::chrono::time_point<Clock, Duration>& time) const;
+
+    // Returns true if this task has a result (UB if valid == false)
+    bool has_result() const;
 
     // Returns the id of the task (unique but changes between runs)
     gcl::TaskId id() const;
@@ -242,8 +264,6 @@ void for_each_impl(const F& f, gcl::Vec<Result>&& ts, Tasks&&... tasks)
     for_each_impl(f, std::forward<Tasks>(tasks)...);
 }
 
-} // detail
-
 // Applies functor `f` to each task in `tasks` which can be of type `Task` and/or `Vec`
 template<typename Functor, typename... Tasks>
 void for_each(const Functor& f, Tasks&&... tasks)
@@ -251,20 +271,22 @@ void for_each(const Functor& f, Tasks&&... tasks)
     gcl::detail::for_each_impl(f, std::forward<Tasks>(tasks)...);
 }
 
-namespace detail
-{
-
 class BaseImpl : public gcl::Callable
 {
 public:
     virtual ~BaseImpl() = default;
 
+    const std::vector<gcl::detail::BaseImpl*>& parents() const override;
     const std::vector<gcl::Callable*>& children() const override;
     bool set_parent_finished() override;
+    bool set_child_finished() override;
+    void auto_release() override;
 
     virtual void reset() = 0;
     virtual void schedule(Exec& exec) = 0;
     virtual void release() = 0;
+
+    void set_auto_release(bool auto_release);
 
     template<typename Visitor>
     void visit(const Visitor& visitor)
@@ -290,10 +312,12 @@ public:
 protected:
     BaseImpl() = default;
 
+    std::atomic<bool> m_auto_release{false};
     bool m_visited = true;
     std::vector<BaseImpl*> m_parents;
     std::vector<gcl::Callable*> m_children;
     std::size_t m_parents_ready = 0;
+    std::size_t m_children_ready = 0;
 };
 
 struct CollectParents
@@ -381,13 +405,14 @@ struct BaseTask<Result>::Impl : BaseImpl
     explicit
     Impl(Functor&& functor, Parents&&... parents)
     {
-        gcl::for_each(gcl::detail::CollectParents{this}, parents...);
+        gcl::detail::for_each(gcl::detail::CollectParents{this}, parents...);
         m_binding = std::make_unique<gcl::detail::BindingImpl<Result, Functor, Parents...>>(std::forward<Functor>(functor), std::forward<Parents>(parents)...);
     }
 
     void reset() override
     {
         m_parents_ready = 0;
+        m_children_ready = 0;
         m_promise = {};
         m_future = m_promise.get_future();
     }
@@ -444,10 +469,23 @@ void BaseTask<Result>::schedule(Exec& exec)
 }
 
 template<typename Result>
+void BaseTask<Result>::set_auto_release(const bool auto_release)
+{
+    m_impl->unvisit();
+    m_impl->visit([auto_release](BaseImpl& i){ i.set_auto_release(auto_release); });
+}
+
+template<typename Result>
 void BaseTask<Result>::release()
 {
     m_impl->unvisit();
     m_impl->visit([](BaseImpl& i){ i.release(); });
+}
+
+template<typename Result>
+bool BaseTask<Result>::valid() const
+{
+    return m_impl->m_future.valid();
 }
 
 template<typename Result>
@@ -457,9 +495,23 @@ void BaseTask<Result>::wait() const
 }
 
 template<typename Result>
-bool BaseTask<Result>::valid() const
+template<typename Rep, typename Period>
+std::future_status BaseTask<Result>::wait_for(const std::chrono::duration<Rep, Period>& duration) const
 {
-    return m_impl->m_future.valid();
+    return m_impl->m_future.wait_for(duration);
+}
+
+template<typename Result>
+template<typename Clock, typename Duration>
+std::future_status BaseTask<Result>::wait_until(const std::chrono::time_point<Clock, Duration>& time) const
+{
+    return m_impl->m_future.wait_until(time);
+}
+
+template<typename Result>
+bool BaseTask<Result>::has_result() const
+{
+    return m_impl->m_future.wait_for(std::chrono::seconds{0}) == std::future_status::ready;
 }
 
 template<typename Result>
@@ -557,14 +609,33 @@ auto tie(Tasks&&... tasks)
 template<typename... Tasks>
 gcl::Task<void> when(Tasks... tasks)
 {
-    return gcl::tie(std::move(tasks)...).then([](auto&&... ts){ gcl::for_each([](const auto& t){ t.get(); }, std::forward<decltype(ts)>(ts)...); });
+    return gcl::tie(std::move(tasks)...).then([](auto&&... ts){ gcl::detail::for_each([](const auto& t){ t.get(); }, std::forward<decltype(ts)>(ts)...); });
 }
 
 // Creates a child that waits for all tasks to finish that are part of `tie`
 template<typename... Tasks>
 gcl::Task<void> when(const gcl::Tie<Tasks...>& tie)
 {
-    return tie.then([](auto&&... ts){ gcl::for_each([](const auto& t){ t.get(); }, std::forward<decltype(ts)>(ts)...); });
+    return tie.then([](auto&&... ts){ gcl::detail::for_each([](const auto& t){ t.get(); }, std::forward<decltype(ts)>(ts)...); });
 }
+
+// Can be used to facilitate task canceling
+class CancelToken
+{
+public:
+    // Called from outside the task
+    void set_canceled(const bool canceled = true)
+    {
+        m_token = canceled;
+    }
+
+    // Checked from within a task's functor
+    bool is_canceled() const
+    {
+        return m_token.load();
+    }
+private:
+    std::atomic<bool> m_token{false};
+};
 
 } // gcl
