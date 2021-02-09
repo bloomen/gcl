@@ -23,6 +23,9 @@ TEST_CASE("schedule")
     });
     gcl::Async async;
     t.schedule(async);
+    REQUIRE(p1.valid());
+    REQUIRE(p2.valid());
+    REQUIRE(t.valid());
     REQUIRE(55 == t.get());
 }
 
@@ -54,6 +57,9 @@ TEST_CASE("schedule_and_auto_release")
     t.set_auto_release(true);
     gcl::Async async;
     t.schedule(async);
+    REQUIRE(!p1.valid());
+    REQUIRE(!p2.valid());
+    REQUIRE(t.valid());
     REQUIRE(55 == t.get());
 }
 
