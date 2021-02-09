@@ -253,17 +253,12 @@ void for_each_impl(const F& f, gcl::Vec<Result>&& ts, Tasks&&... tasks)
     for_each_impl(f, std::forward<Tasks>(tasks)...);
 }
 
-} // detail
-
 // Applies functor `f` to each task in `tasks` which can be of type `Task` and/or `Vec`
 template<typename Functor, typename... Tasks>
 void for_each(const Functor& f, Tasks&&... tasks)
 {
     gcl::detail::for_each_impl(f, std::forward<Tasks>(tasks)...);
 }
-
-namespace detail
-{
 
 class BaseImpl : public gcl::Callable
 {
@@ -392,7 +387,7 @@ struct BaseTask<Result>::Impl : BaseImpl
     explicit
     Impl(Functor&& functor, Parents&&... parents)
     {
-        gcl::for_each(gcl::detail::CollectParents{this}, parents...);
+        gcl::detail::for_each(gcl::detail::CollectParents{this}, parents...);
         m_binding = std::make_unique<gcl::detail::BindingImpl<Result, Functor, Parents...>>(std::forward<Functor>(functor), std::forward<Parents>(parents)...);
     }
 
@@ -588,14 +583,14 @@ auto tie(Tasks&&... tasks)
 template<typename... Tasks>
 gcl::Task<void> when(Tasks... tasks)
 {
-    return gcl::tie(std::move(tasks)...).then([](auto&&... ts){ gcl::for_each([](const auto& t){ t.get(); }, std::forward<decltype(ts)>(ts)...); });
+    return gcl::tie(std::move(tasks)...).then([](auto&&... ts){ gcl::detail::for_each([](const auto& t){ t.get(); }, std::forward<decltype(ts)>(ts)...); });
 }
 
 // Creates a child that waits for all tasks to finish that are part of `tie`
 template<typename... Tasks>
 gcl::Task<void> when(const gcl::Tie<Tasks...>& tie)
 {
-    return tie.then([](auto&&... ts){ gcl::for_each([](const auto& t){ t.get(); }, std::forward<decltype(ts)>(ts)...); });
+    return tie.then([](auto&&... ts){ gcl::detail::for_each([](const auto& t){ t.get(); }, std::forward<decltype(ts)>(ts)...); });
 }
 
 } // gcl
