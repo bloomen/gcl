@@ -16,7 +16,11 @@ TEST_CASE("schedule")
 {
     auto p1 = gcl::task([]{ return 42; });
     auto p2 = gcl::task([]{ return 13; });
-    auto t = gcl::tie(p1, p2).then([](auto p1, auto p2){ return p1.get() + p2.get(); });
+    auto t = gcl::tie(p1, p2).then([](auto p1, auto p2){
+        REQUIRE(p1.has_result());
+        REQUIRE(p2.has_result());
+        return p1.get() + p2.get();
+    });
     gcl::Async async;
     t.schedule(async);
     REQUIRE(55 == t.get());
@@ -36,7 +40,11 @@ TEST_CASE("schedule_using_async")
 {
     auto p1 = gcl::task([]{ return 42; });
     auto p2 = gcl::task([]{ return 13; });
-    auto t = gcl::tie(p1, p2).then([](auto p1, auto p2){ return p1.get() + p2.get(); });
+    auto t = gcl::tie(p1, p2).then([](auto p1, auto p2){
+        REQUIRE(p1.has_result());
+        REQUIRE(p2.has_result());
+        return p1.get() + p2.get();
+    });
     gcl::Async async{4};
     t.schedule(async);
     t.wait();
@@ -85,8 +93,8 @@ TEST_CASE("schedule_a_wide_graph")
     gcl::Vec<int> tasks;
     for (int i = 0; i < 10; ++i)
     {
-        auto t1 = top.then([&x](auto t){ x++; return t.get(); });
-        auto t2 = t1.then([&x](auto t){ x++; return t.get(); });
+        auto t1 = top.then([&x](auto t){ REQUIRE(t.has_result()); x++; return t.get(); });
+        auto t2 = t1.then([&x](auto t){ REQUIRE(t.has_result()); x++; return t.get(); });
         tasks.push_back(t2);
     }
     auto bottom = gcl::tie(tasks).then([&x](gcl::Vec<int>) { x++; });
@@ -227,7 +235,7 @@ TEST_CASE("task_chaining_with_int")
 TEST_CASE("task_chaining_with_void")
 {
     int x = 0;
-    auto f = [&x](gcl::Task<void>){ x++; };
+    auto f = [&x](gcl::Task<void> t){ REQUIRE(t.has_result()); x++; };
     auto t = gcl::task([&x]{ x++; }).then(f).then(f).then(f).then(f);
     gcl::Async async;
     t.schedule(async);

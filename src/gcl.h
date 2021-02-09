@@ -81,8 +81,19 @@ public:
     // Returns true if this task contains a valid shared state
     bool valid() const;
 
-    // Waits for the task to finish
+    // Waits for the task to finish (UB if valid == false)
     void wait() const;
+
+    // Waits for the given duration for the task to finish (UB if valid == false)
+    template<typename Rep, typename Period>
+    std::future_status wait_for(const std::chrono::duration<Rep, Period>& duration) const;
+
+    // Waits until the given time for the task to finish (UB if valid == false)
+    template<typename Clock, typename Duration>
+    std::future_status wait_until(const std::chrono::time_point<Clock, Duration>& time) const;
+
+    // Returns true if this task has a result (UB if valid == false)
+    bool has_result() const;
 
     // Returns the id of the task (unique but changes between runs)
     gcl::TaskId id() const;
@@ -451,15 +462,35 @@ void BaseTask<Result>::release()
 }
 
 template<typename Result>
+bool BaseTask<Result>::valid() const
+{
+    return m_impl->m_future.valid();
+}
+
+template<typename Result>
 void BaseTask<Result>::wait() const
 {
     m_impl->m_future.wait();
 }
 
 template<typename Result>
-bool BaseTask<Result>::valid() const
+template<typename Rep, typename Period>
+std::future_status BaseTask<Result>::wait_for(const std::chrono::duration<Rep, Period>& duration) const
 {
-    return m_impl->m_future.valid();
+    return m_impl->m_future.wait_for(duration);
+}
+
+template<typename Result>
+template<typename Clock, typename Duration>
+std::future_status BaseTask<Result>::wait_until(const std::chrono::time_point<Clock, Duration>& time) const
+{
+    return m_impl->m_future.wait_until(time);
+}
+
+template<typename Result>
+bool BaseTask<Result>::has_result() const
+{
+    return m_impl->m_future.wait_for(std::chrono::seconds{0}) == std::future_status::ready;
 }
 
 template<typename Result>
