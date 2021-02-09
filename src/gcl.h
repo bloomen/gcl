@@ -311,8 +311,8 @@ protected:
     bool m_visited = true;
     std::vector<gcl::ITask*> m_parents;
     std::vector<gcl::ITask*> m_children;
-    std::size_t m_parents_ready = 0;
-    std::size_t m_children_ready = 0;
+    std::uint32_t m_parents_ready = 0;
+    std::uint32_t m_children_ready = 0;
 };
 
 struct CollectParents
