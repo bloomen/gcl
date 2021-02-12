@@ -63,8 +63,12 @@ class Processor
 public:
 
     explicit 
-    Processor(CompletedQueue& completed, const std::size_t initial_processor_size)
-        : m_completed{completed}, m_active{initial_processor_size}
+    Processor(CompletedQueue& completed,
+              const std::size_t initial_processor_size,
+              std::function<void()> sleep_if)
+        : m_completed{completed}
+        , m_active{initial_processor_size}
+        , m_sleep_if{std::move(sleep_if)}
     {}
 
     ~Processor()
@@ -94,12 +98,14 @@ private:
                 m_completed.push(task);
             }
             std::this_thread::yield();
+            m_sleep_if();
         }
     }
 
     std::atomic<bool> m_done{false};
     CompletedQueue& m_completed;
     ActiveQueue m_active;
+    std::function<void()> m_sleep_if;
     std::thread m_thread{&Processor::worker, this};
 };
 
@@ -108,11 +114,14 @@ private:
 struct Async::Impl
 {
     explicit
-    Impl(const std::size_t n_threads, const std::size_t initial_processor_size)
+    Impl(const std::size_t n_threads,
+         const std::size_t initial_processor_size,
+         const std::chrono::milliseconds inactive_sleep_interval)
+        : m_inactive_sleep_interval{inactive_sleep_interval}
     {
         for (std::size_t i = 0; i < n_threads; ++i)
         {
-            m_processors.emplace_front(m_completed, initial_processor_size);
+            m_processors.emplace_front(m_completed, initial_processor_size, [this]{ sleep_if(); });
         }
     }
 
@@ -120,6 +129,11 @@ struct Async::Impl
     {
         m_done = true;
         m_thread.join();
+    }
+
+    void set_active(const bool active)
+    {
+        m_active = active;
     }
 
     void execute(ITask& task)
@@ -160,6 +174,7 @@ private:
                 on_completed(*task);
             }
             std::this_thread::yield();
+            sleep_if();
         }
     }
 
@@ -181,17 +196,34 @@ private:
         }
     }
 
+    void sleep_if() const
+    {
+        if (m_inactive_sleep_interval > std::chrono::milliseconds{0} && !m_active)
+        {
+            std::this_thread::sleep_for(m_inactive_sleep_interval);
+        }
+    }
+
     std::atomic<bool> m_done{false};
+    std::atomic<bool> m_active{false};
+    std::chrono::milliseconds m_inactive_sleep_interval;
     std::forward_list<Processor> m_processors;
     CompletedQueue m_completed;
     std::thread m_thread{&Impl::worker, this};
 };
 
-Async::Async(const std::size_t n_threads, const std::size_t initial_processor_size)
-    : m_impl{std::make_unique<Impl>(n_threads, initial_processor_size)}
+Async::Async(const std::size_t n_threads,
+             const std::size_t initial_processor_size,
+             const std::chrono::milliseconds inactive_sleep_interval)
+    : m_impl{std::make_unique<Impl>(n_threads, initial_processor_size, inactive_sleep_interval)}
 {}
 
 Async::~Async() = default;
+
+void Async::set_active(bool active)
+{
+    m_impl->set_active(active);
+}
 
 void Async::execute(ITask& task)
 {
