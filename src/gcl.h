@@ -13,7 +13,7 @@
 namespace gcl
 {
 
-// Task interface needed for scheduling
+// Task interface used for scheduling
 class ITask
 {
 public:
@@ -57,7 +57,7 @@ public:
     Async(std::size_t n_threads = 0, gcl::AsyncConfig config = {});
     ~Async();
 
-    void set_active(bool active);
+    void set_active(bool active) override;
     void execute(ITask& task) override;
 private:
     struct Impl;
