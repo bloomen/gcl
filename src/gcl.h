@@ -35,26 +35,26 @@ public:
     virtual void execute(ITask& task) = 0;
 };
 
+// Config struct for the Async class
+struct AsyncConfig
+{
+    bool active = true;
+    bool processor_yields = true;
+    bool scheduler_yields = true;
+    std::chrono::microseconds inactive_processor_sleep_interval = std::chrono::microseconds{1000};
+    std::chrono::microseconds inactive_scheduler_sleep_interval = std::chrono::microseconds{1000};
+    std::size_t initial_processor_queue_size = 8;
+    std::size_t initial_scheduler_queue_size = 32;
+    std::function<void(std::size_t thread_index)> on_processor_thread_started;
+    std::function<void()> on_scheduler_thread_started;
+};
+
 // Async executor for asynchronous execution
 class Async : public gcl::Exec
 {
 public:
-
-    struct Config
-    {
-        bool active = true;
-        bool processor_yields = true;
-        bool scheduler_yields = true;
-        std::chrono::microseconds inactive_processor_sleep_interval = std::chrono::microseconds{1000};
-        std::chrono::microseconds inactive_scheduler_sleep_interval = std::chrono::microseconds{1000};
-        std::size_t initial_processor_queue_size = 8;
-        std::size_t initial_scheduler_queue_size = 32;
-        std::function<void(std::size_t thread_index)> on_processor_thread_started;
-        std::function<void()> on_scheduler_thread_started;
-    };
-
     explicit
-    Async(std::size_t n_threads = 0, Config config = {});
+    Async(std::size_t n_threads = 0, gcl::AsyncConfig config = {});
     ~Async();
 
     void set_active(bool active);

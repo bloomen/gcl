@@ -64,7 +64,7 @@ public:
 
     explicit 
     Processor(const std::size_t index,
-              const Async::Config& config,
+              const AsyncConfig& config,
               const std::atomic<bool>& active,
               CompletedQueue& completed)
         : m_config{config}
@@ -114,7 +114,7 @@ private:
         }
     }
 
-    const Async::Config& m_config;
+    const AsyncConfig& m_config;
     const std::atomic<bool>& m_active;
     CompletedQueue& m_completed;
     std::atomic<bool> m_done{false};
@@ -127,7 +127,7 @@ private:
 struct Async::Impl
 {
     explicit
-    Impl(const std::size_t n_threads, Config config)
+    Impl(const std::size_t n_threads, AsyncConfig config)
         : m_config{std::move(config)}
         , m_active{m_config.active}
         , m_completed{m_config.initial_scheduler_queue_size}
@@ -219,7 +219,7 @@ private:
         }
     }
 
-    Config m_config;
+    AsyncConfig m_config;
     std::atomic<bool> m_done{false};
     std::atomic<bool> m_active;
     CompletedQueue m_completed;
@@ -227,7 +227,7 @@ private:
     std::thread m_thread{&Impl::worker, this};
 };
 
-Async::Async(const std::size_t n_threads, Config config)
+Async::Async(const std::size_t n_threads, AsyncConfig config)
     : m_impl{std::make_unique<Impl>(n_threads, std::move(config))}
 {}
 
