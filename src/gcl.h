@@ -43,7 +43,8 @@ public:
     struct Config
     {
         bool intially_active = true;
-        std::chrono::microseconds inactive_sleep_interval = std::chrono::microseconds{1000};
+        std::chrono::microseconds inactive_processor_sleep_interval = std::chrono::microseconds{1000};
+        std::chrono::microseconds inactive_scheduler_sleep_interval = std::chrono::microseconds{1000};
         std::size_t initial_processor_queue_size = 8;
         std::size_t initial_scheduler_queue_size = 32;
         std::function<void(std::size_t thread_index)> on_processor_thread_started;

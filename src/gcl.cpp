@@ -104,9 +104,9 @@ private:
                 m_completed.push(task);
             }
             std::this_thread::yield();
-            if (m_config.inactive_sleep_interval > std::chrono::microseconds{0} && !m_active)
+            if (m_config.inactive_processor_sleep_interval > std::chrono::microseconds{0} && !m_active)
             {
-                std::this_thread::sleep_for(m_config.inactive_sleep_interval);
+                std::this_thread::sleep_for(m_config.inactive_processor_sleep_interval);
             }
         }
     }
@@ -188,9 +188,9 @@ private:
                 on_completed(*task);
             }
             std::this_thread::yield();
-            if (m_config.inactive_sleep_interval > std::chrono::microseconds{0} && !m_active)
+            if (m_config.inactive_scheduler_sleep_interval > std::chrono::microseconds{0} && !m_active)
             {
-                std::this_thread::sleep_for(m_config.inactive_sleep_interval);
+                std::this_thread::sleep_for(m_config.inactive_scheduler_sleep_interval);
             }
         }
     }
