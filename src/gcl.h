@@ -39,11 +39,18 @@ public:
 class Async : public gcl::Exec
 {
 public:
+
+    struct Config
+    {
+        bool active = true;
+        std::size_t initial_processor_queue_size = 8;
+        std::chrono::microseconds inactive_sleep_interval = std::chrono::microseconds{1000};
+    };
+
     explicit
-    Async(std::size_t n_threads = 0,
-          std::size_t initial_processor_size = 8,
-          std::chrono::microseconds inactive_sleep_interval = std::chrono::microseconds{1000});
+    Async(std::size_t n_threads = 0, Config config = {});
     ~Async();
+
     void set_active(bool active);
     void execute(ITask& task) override;
 private:

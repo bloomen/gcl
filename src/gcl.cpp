@@ -113,14 +113,13 @@ private:
 struct Async::Impl
 {
     explicit
-    Impl(const std::size_t n_threads,
-         const std::size_t initial_processor_size,
-         const std::chrono::microseconds inactive_sleep_interval)
-        : m_inactive_sleep_interval{inactive_sleep_interval}
+    Impl(const std::size_t n_threads, Config config)
+        : m_config{std::move(config)}
+        , m_active{m_config.active}
     {
         for (std::size_t i = 0; i < n_threads; ++i)
         {
-            m_processors.emplace_front(m_completed, initial_processor_size, [this]{ yield(); });
+            m_processors.emplace_front(m_completed, m_config.initial_processor_queue_size, [this]{ yield(); });
         }
     }
 
@@ -197,24 +196,22 @@ private:
     void yield() const
     {
         std::this_thread::yield();
-        if (m_inactive_sleep_interval > std::chrono::microseconds{0} && !m_active)
+        if (m_config.inactive_sleep_interval > std::chrono::microseconds{0} && !m_active)
         {
-            std::this_thread::sleep_for(m_inactive_sleep_interval);
+            std::this_thread::sleep_for(m_config.inactive_sleep_interval);
         }
     }
 
+    Config m_config;
     std::atomic<bool> m_done{false};
-    std::atomic<bool> m_active{true};
-    std::chrono::microseconds m_inactive_sleep_interval;
+    std::atomic<bool> m_active;
     std::forward_list<Processor> m_processors;
     CompletedQueue m_completed;
     std::thread m_thread{&Impl::worker, this};
 };
 
-Async::Async(const std::size_t n_threads,
-             const std::size_t initial_processor_size,
-             const std::chrono::microseconds inactive_sleep_interval)
-    : m_impl{std::make_unique<Impl>(n_threads, initial_processor_size, inactive_sleep_interval)}
+Async::Async(const std::size_t n_threads, Config config)
+    : m_impl{std::make_unique<Impl>(n_threads, std::move(config))}
 {}
 
 Async::~Async() = default;
