@@ -42,7 +42,7 @@ public:
     explicit
     Async(std::size_t n_threads = 0,
           std::size_t initial_processor_size = 8,
-          std::chrono::milliseconds inactive_sleep_interval = std::chrono::milliseconds{1});
+          std::chrono::microseconds inactive_sleep_interval = std::chrono::microseconds{1000});
     ~Async();
     void set_active(bool active);
     void execute(ITask& task) override;
@@ -463,7 +463,6 @@ void BaseTask<Result>::init(Functor&& functor, Parents&&... parents)
 template<typename Result>
 void BaseTask<Result>::schedule(Exec& exec)
 {
-    exec.set_active(true);
     m_impl->unvisit(true);
     m_impl->visit([&exec](BaseImpl& i){ i.schedule(exec); });
 }

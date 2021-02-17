@@ -56,7 +56,7 @@ private:
 };
 
 using CompletedQueue = LockFreeQueue<moodycamel::ConcurrentQueue<ITask*>>; // MpSc
-using ActiveQueue = LockFreeQueue<moodycamel::ReaderWriterQueue<ITask*>>; // SpSc
+using ScheduledQueue = LockFreeQueue<moodycamel::ReaderWriterQueue<ITask*>>; // SpSc
 
 class Processor
 {
@@ -65,10 +65,10 @@ public:
     explicit 
     Processor(CompletedQueue& completed,
               const std::size_t initial_processor_size,
-              std::function<void()> sleep_if)
+              std::function<void()> yield)
         : m_completed{completed}
-        , m_active{initial_processor_size}
-        , m_sleep_if{std::move(sleep_if)}
+        , m_scheduled{initial_processor_size}
+        , m_yield{std::move(yield)}
     {}
 
     ~Processor()
@@ -79,12 +79,12 @@ public:
 
     std::size_t size() const
     {
-        return m_active.size();
+        return m_scheduled.size();
     }
 
     void push(ITask* const task)
     {
-        m_active.push(task);
+        m_scheduled.push(task);
     }
 
 private:
@@ -92,20 +92,19 @@ private:
     {
         while (!m_done)
         {
-            if (const auto task = m_active.pop())
+            while (const auto task = m_scheduled.pop())
             {
                 task->call();
                 m_completed.push(task);
             }
-            std::this_thread::yield();
-            m_sleep_if();
+            m_yield();
         }
     }
 
     std::atomic<bool> m_done{false};
     CompletedQueue& m_completed;
-    ActiveQueue m_active;
-    std::function<void()> m_sleep_if;
+    ScheduledQueue m_scheduled;
+    std::function<void()> m_yield;
     std::thread m_thread{&Processor::worker, this};
 };
 
@@ -116,12 +115,12 @@ struct Async::Impl
     explicit
     Impl(const std::size_t n_threads,
          const std::size_t initial_processor_size,
-         const std::chrono::milliseconds inactive_sleep_interval)
+         const std::chrono::microseconds inactive_sleep_interval)
         : m_inactive_sleep_interval{inactive_sleep_interval}
     {
         for (std::size_t i = 0; i < n_threads; ++i)
         {
-            m_processors.emplace_front(m_completed, initial_processor_size, [this]{ sleep_if(); });
+            m_processors.emplace_front(m_completed, initial_processor_size, [this]{ yield(); });
         }
     }
 
@@ -169,12 +168,11 @@ private:
     {
         while (!m_done)
         {
-            if (const auto task = m_completed.pop())
+            while (const auto task = m_completed.pop())
             {
                 on_completed(*task);
             }
-            std::this_thread::yield();
-            sleep_if();
+            yield();
         }
     }
 
@@ -196,17 +194,18 @@ private:
         }
     }
 
-    void sleep_if() const
+    void yield() const
     {
-        if (m_inactive_sleep_interval > std::chrono::milliseconds{0} && !m_active)
+        std::this_thread::yield();
+        if (m_inactive_sleep_interval > std::chrono::microseconds{0} && !m_active)
         {
             std::this_thread::sleep_for(m_inactive_sleep_interval);
         }
     }
 
     std::atomic<bool> m_done{false};
-    std::atomic<bool> m_active{false};
-    std::chrono::milliseconds m_inactive_sleep_interval;
+    std::atomic<bool> m_active{true};
+    std::chrono::microseconds m_inactive_sleep_interval;
     std::forward_list<Processor> m_processors;
     CompletedQueue m_completed;
     std::thread m_thread{&Impl::worker, this};
@@ -214,7 +213,7 @@ private:
 
 Async::Async(const std::size_t n_threads,
              const std::size_t initial_processor_size,
-             const std::chrono::milliseconds inactive_sleep_interval)
+             const std::chrono::microseconds inactive_sleep_interval)
     : m_impl{std::make_unique<Impl>(n_threads, initial_processor_size, inactive_sleep_interval)}
 {}
 
