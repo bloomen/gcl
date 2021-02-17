@@ -650,4 +650,21 @@ private:
     std::atomic<bool> m_token{false};
 };
 
+// A function similar to std::for_each but returning a task for deferred,
+// possibly asynchronous execution. This function creates a graph
+// with std::distance(first, last) + 1 tasks. UB if first >= last.
+// Note that `unary_op` takes an iterator.
+template<typename InputIt, typename UnaryOperation>
+gcl::Task<void> for_each(InputIt first, InputIt last, UnaryOperation unary_op)
+{
+    const auto distance = std::distance(first, last);
+    gcl::Vec<void> tasks;
+    tasks.reserve(static_cast<std::size_t>(distance));
+    for (; first != last; ++first)
+    {
+        tasks.push_back(gcl::task([unary_op, first]{ unary_op(first); }));
+    }
+    return gcl::when(tasks);
+}
+
 } // gcl
