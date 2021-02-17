@@ -42,7 +42,7 @@ public:
 
     struct Config
     {
-        bool active = true;
+        bool intially_active = true;
         std::size_t initial_processor_queue_size = 8;
         std::size_t initial_completion_queue_size = 32;
         std::chrono::microseconds inactive_sleep_interval = std::chrono::microseconds{1000};

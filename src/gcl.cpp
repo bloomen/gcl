@@ -115,7 +115,7 @@ struct Async::Impl
     explicit
     Impl(const std::size_t n_threads, Config config)
         : m_config{std::move(config)}
-        , m_active{m_config.active}
+        , m_active{m_config.intially_active}
         , m_completed{m_config.initial_completion_queue_size}
     {
         for (std::size_t i = 0; i < n_threads; ++i)
