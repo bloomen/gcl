@@ -63,12 +63,14 @@ class Processor
 public:
 
     explicit 
-    Processor(CompletedQueue& completed,
-              const std::size_t initial_processor_size,
-              std::function<void()> yield)
-        : m_completed{completed}
-        , m_scheduled{initial_processor_size}
-        , m_yield{std::move(yield)}
+    Processor(const std::size_t index,
+              const Async::Config& config,
+              const std::atomic<bool>& active,
+              CompletedQueue& completed)
+        : m_config{config}
+        , m_active{active}
+        , m_completed{completed}
+        , m_thread{&Processor::worker, this, index}
     {}
 
     ~Processor()
@@ -88,8 +90,12 @@ public:
     }
 
 private:
-    void worker()
+    void worker(const std::size_t index)
     {
+        if (m_config.on_processor_thread_started)
+        {
+            m_config.on_processor_thread_started(index);
+        }
         while (!m_done)
         {
             while (const auto task = m_scheduled.pop())
@@ -97,15 +103,20 @@ private:
                 task->call();
                 m_completed.push(task);
             }
-            m_yield();
+            std::this_thread::yield();
+            if (m_config.inactive_sleep_interval > std::chrono::microseconds{0} && !m_active)
+            {
+                std::this_thread::sleep_for(m_config.inactive_sleep_interval);
+            }
         }
     }
 
-    std::atomic<bool> m_done{false};
+    const Async::Config& m_config;
+    const std::atomic<bool>& m_active;
     CompletedQueue& m_completed;
+    std::atomic<bool> m_done{false};
     ScheduledQueue m_scheduled;
-    std::function<void()> m_yield;
-    std::thread m_thread{&Processor::worker, this};
+    std::thread m_thread;
 };
 
 }
@@ -116,11 +127,11 @@ struct Async::Impl
     Impl(const std::size_t n_threads, Config config)
         : m_config{std::move(config)}
         , m_active{m_config.intially_active}
-        , m_completed{m_config.initial_completion_queue_size}
+        , m_completed{m_config.initial_scheduler_queue_size}
     {
         for (std::size_t i = 0; i < n_threads; ++i)
         {
-            m_processors.emplace_front(m_completed, m_config.initial_processor_queue_size, [this]{ yield(); });
+            m_processors.emplace_front(i, m_config, m_active, m_completed);
         }
     }
 
@@ -166,13 +177,21 @@ struct Async::Impl
 private:
     void worker()
     {
+        if (m_config.on_scheduler_thread_started)
+        {
+            m_config.on_scheduler_thread_started();
+        }
         while (!m_done)
         {
             while (const auto task = m_completed.pop())
             {
                 on_completed(*task);
             }
-            yield();
+            std::this_thread::yield();
+            if (m_config.inactive_sleep_interval > std::chrono::microseconds{0} && !m_active)
+            {
+                std::this_thread::sleep_for(m_config.inactive_sleep_interval);
+            }
         }
     }
 
@@ -194,20 +213,11 @@ private:
         }
     }
 
-    void yield() const
-    {
-        std::this_thread::yield();
-        if (m_config.inactive_sleep_interval > std::chrono::microseconds{0} && !m_active)
-        {
-            std::this_thread::sleep_for(m_config.inactive_sleep_interval);
-        }
-    }
-
     Config m_config;
     std::atomic<bool> m_done{false};
     std::atomic<bool> m_active;
-    std::forward_list<Processor> m_processors;
     CompletedQueue m_completed;
+    std::forward_list<Processor> m_processors;
     std::thread m_thread{&Impl::worker, this};
 };
 
