@@ -42,7 +42,7 @@ public:
 
     struct Config
     {
-        bool intially_active = true;
+        bool active = true;
         bool processor_yields = true;
         bool scheduler_yields = true;
         std::chrono::microseconds inactive_processor_sleep_interval = std::chrono::microseconds{1000};
