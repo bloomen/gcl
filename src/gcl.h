@@ -10,6 +10,15 @@
 #include <tuple>
 #include <vector>
 
+#ifndef GCL_ASSERT
+#ifdef NDEBUG
+#define GCL_ASSERT(x)
+#else
+#include <cassert>
+#define GCL_ASSERT(x) assert(x)
+#endif
+#endif
+
 namespace gcl
 {
 
@@ -92,16 +101,11 @@ public:
     template<typename Functor>
     auto then(Functor&& functor) &&;
 
-    // Schedules this task and its parents for execution
+    // Schedules this task and its parents for execution. Blocks until task finishes if currently scheduled.
+    // The result of this function call is valid == true.
     void schedule(gcl::Exec& e);
 
-    // Auto-release means automatic result clean-up once a parent's result was fully consumed
-    void set_auto_release(bool auto_release);
-
-    // Releases this task's result and its parents' results
-    void release();
-
-    // Returns true if this task contains a valid shared state
+    // Returns true if this task was scheduled at least once and not released
     bool valid() const;
 
     // Waits for the task to finish (UB if valid == false)
@@ -117,6 +121,12 @@ public:
 
     // Returns true if this task has a result (UB if valid == false)
     bool has_result() const;
+
+    // Auto-release means automatic result clean-up once a parent's result was fully consumed
+    void set_auto_release(bool auto_release);
+
+    // Releases this task's result and its parents' results. Blocks until task finishes if currently scheduled.
+    void release();
 
     // Returns the id of the task (unique but changes between runs)
     gcl::TaskId id() const;
@@ -216,6 +226,7 @@ auto task(Functor&& functor)
 template<typename... Result>
 auto vec(const gcl::Task<Result>&... tasks)
 {
+    static_assert(sizeof...(tasks) > 0, "Need to provide at least one task");
     using ResultType = std::tuple_element_t<0, std::tuple<Result...>>;
     return gcl::Vec<ResultType>{tasks...};
 }
@@ -224,6 +235,7 @@ auto vec(const gcl::Task<Result>&... tasks)
 template<typename... Result>
 auto vec(gcl::Task<Result>&&... tasks)
 {
+    static_assert(sizeof...(tasks) > 0, "Need to provide at least one task");
     using ResultType = std::tuple_element_t<0, std::tuple<Result...>>;
     return gcl::Vec<ResultType>{std::move(tasks)...};
 }
@@ -476,8 +488,48 @@ void BaseTask<Result>::init(Functor&& functor, Parents&&... parents)
 template<typename Result>
 void BaseTask<Result>::schedule(Exec& exec)
 {
+    if (valid())
+    {
+        wait(); // no-op if future has a result
+    }
     m_impl->unvisit(true);
     m_impl->visit([&exec](BaseImpl& i){ i.schedule(exec); });
+}
+
+template<typename Result>
+bool BaseTask<Result>::valid() const
+{
+    return m_impl->m_future.valid();
+}
+
+template<typename Result>
+void BaseTask<Result>::wait() const
+{
+    GCL_ASSERT(valid());
+    m_impl->m_future.wait();
+}
+
+template<typename Result>
+template<typename Rep, typename Period>
+std::future_status BaseTask<Result>::wait_for(const std::chrono::duration<Rep, Period>& duration) const
+{
+    GCL_ASSERT(valid());
+    return m_impl->m_future.wait_for(duration);
+}
+
+template<typename Result>
+template<typename Clock, typename Duration>
+std::future_status BaseTask<Result>::wait_until(const std::chrono::time_point<Clock, Duration>& time) const
+{
+    GCL_ASSERT(valid());
+    return m_impl->m_future.wait_until(time);
+}
+
+template<typename Result>
+bool BaseTask<Result>::has_result() const
+{
+    GCL_ASSERT(valid());
+    return m_impl->m_future.wait_for(std::chrono::seconds{0}) == std::future_status::ready;
 }
 
 template<typename Result>
@@ -490,40 +542,12 @@ void BaseTask<Result>::set_auto_release(const bool auto_release)
 template<typename Result>
 void BaseTask<Result>::release()
 {
+    if (valid())
+    {
+        wait(); // no-op if future has a result
+    }
     m_impl->unvisit();
     m_impl->visit([](BaseImpl& i){ i.release(); });
-}
-
-template<typename Result>
-bool BaseTask<Result>::valid() const
-{
-    return m_impl->m_future.valid();
-}
-
-template<typename Result>
-void BaseTask<Result>::wait() const
-{
-    m_impl->m_future.wait();
-}
-
-template<typename Result>
-template<typename Rep, typename Period>
-std::future_status BaseTask<Result>::wait_for(const std::chrono::duration<Rep, Period>& duration) const
-{
-    return m_impl->m_future.wait_for(duration);
-}
-
-template<typename Result>
-template<typename Clock, typename Duration>
-std::future_status BaseTask<Result>::wait_until(const std::chrono::time_point<Clock, Duration>& time) const
-{
-    return m_impl->m_future.wait_until(time);
-}
-
-template<typename Result>
-bool BaseTask<Result>::has_result() const
-{
-    return m_impl->m_future.wait_for(std::chrono::seconds{0}) == std::future_status::ready;
 }
 
 template<typename Result>
@@ -543,18 +567,21 @@ std::vector<gcl::Edge> BaseTask<Result>::edges() const
 template<typename Result>
 const Result& Task<Result>::get() const
 {
+    GCL_ASSERT(this->valid());
     return this->m_impl->m_future.get();
 }
 
 template<typename Result>
 Result& Task<Result&>::get() const
 {
+    GCL_ASSERT(this->valid());
     return this->m_impl->m_future.get();
 }
 
 inline
 void Task<void>::get() const
 {
+    GCL_ASSERT(this->valid());
     this->m_impl->m_future.get();
 }
 
@@ -563,6 +590,7 @@ template<typename... Tasks>
 class Tie
 {
 public:
+    static_assert(sizeof...(Tasks) > 0, "Need to provide at least one task");
 
     explicit
     Tie(const Tasks&... tasks)
@@ -658,6 +686,7 @@ template<typename InputIt, typename UnaryOperation>
 gcl::Task<void> for_each(InputIt first, InputIt last, UnaryOperation unary_op)
 {
     const auto distance = std::distance(first, last);
+    GCL_ASSERT(distance > 0);
     gcl::Vec<void> tasks;
     tasks.reserve(static_cast<std::size_t>(distance));
     for (; first != last; ++first)
