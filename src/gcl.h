@@ -529,8 +529,8 @@ public:
     // producer
     void set(gcl::detail::ChannelElement<Result>&& element)
     {
-        new (m_storage.data()) gcl::detail::ChannelElement<Result>{std::move(element)};
-        m_element.store(reinterpret_cast<gcl::detail::ChannelElement<Result>*>(m_storage.data()));
+        new (m_storage) gcl::detail::ChannelElement<Result>{std::move(element)};
+        m_element.store(reinterpret_cast<gcl::detail::ChannelElement<Result>*>(m_storage));
     }
 
     // consumer
@@ -540,7 +540,7 @@ public:
     }
 
 private:
-    std::array<char, sizeof(gcl::detail::ChannelElement<Result>)> m_storage;
+    char m_storage[sizeof(gcl::detail::ChannelElement<Result>)];
     std::atomic<gcl::detail::ChannelElement<Result>*> m_element{nullptr};
 };
 
