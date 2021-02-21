@@ -146,7 +146,7 @@ class Task : public gcl::detail::BaseTask<Result>
 {
 public:
 
-    // Returns the task's result. Returns null if no result available
+    // Returns the task's result. Returns null if no result available. May throw
     const Result* get() const;
 
     template<typename Functor, typename... Parents>
@@ -167,7 +167,7 @@ class Task<Result&> : public gcl::detail::BaseTask<Result&>
 {
 public:
 
-    // Returns the task's result. Returns null if no result available
+    // Returns the task's result. Returns null if no result available. May throw
     Result* get() const;
 
     template<typename Functor, typename... Parents>
@@ -188,7 +188,7 @@ class Task<void> : public gcl::detail::BaseTask<void>
 {
 public:
 
-    // Returns the task's result. Returns false if no result available
+    // Returns true if the task finished, false otherwise. May throw
     bool get() const;
 
     template<typename Functor, typename... Parents>
