@@ -19,14 +19,14 @@ TEST_CASE("schedule")
     auto t = gcl::tie(p1, p2).then([](auto p1, auto p2){
         REQUIRE(p1.has_result());
         REQUIRE(p2.has_result());
-        return p1.get() + p2.get();
+        return *p1.get() + *p2.get();
     });
     gcl::Async async;
     t.schedule(async);
     REQUIRE(p1.valid());
     REQUIRE(p2.valid());
     REQUIRE(t.valid());
-    REQUIRE(55 == t.get());
+    REQUIRE(55 == *t.get());
 }
 
 TEST_CASE("schedule_and_cancel")
@@ -39,12 +39,12 @@ TEST_CASE("schedule_and_cancel")
         {
             return -1;
         }
-        return p1.get() + p2.get();
+        return *p1.get() + *p2.get();
     });
     ct.set_canceled();
     gcl::Async async;
     t.schedule(async);
-    REQUIRE(-1 == t.get());
+    REQUIRE(-1 == *t.get());
 }
 
 TEST_CASE("schedule_and_auto_release")
@@ -52,7 +52,7 @@ TEST_CASE("schedule_and_auto_release")
     auto p1 = gcl::task([]{ return 42; });
     auto p2 = gcl::task([]{ return 13; });
     auto t = gcl::tie(p1, p2).then([](auto p1, auto p2){
-        return p1.get() + p2.get();
+        return *p1.get() + *p2.get();
     });
     t.set_auto_release(true);
     gcl::Async async;
@@ -60,17 +60,17 @@ TEST_CASE("schedule_and_auto_release")
     REQUIRE(!p1.valid());
     REQUIRE(!p2.valid());
     REQUIRE(t.valid());
-    REQUIRE(55 == t.get());
+    REQUIRE(55 == *t.get());
 }
 
 TEST_CASE("schedule_with_vec_parents")
 {
     auto p1 = gcl::task([]{ return 42; });
     auto p2 = gcl::task([]{ return 13; });
-    auto t = gcl::tie(gcl::vec(p1, p2)).then([](gcl::Vec<int> p){ return p[0].get() + p[1].get(); });
+    auto t = gcl::tie(gcl::vec(p1, p2)).then([](gcl::Vec<int> p){ return *p[0].get() + *p[1].get(); });
     gcl::Async async;
     t.schedule(async);
-    REQUIRE(55 == t.get());
+    REQUIRE(55 == *t.get());
 }
 
 TEST_CASE("schedule_using_async")
@@ -80,35 +80,35 @@ TEST_CASE("schedule_using_async")
     auto t = gcl::tie(p1, p2).then([](auto p1, auto p2){
         REQUIRE(p1.has_result());
         REQUIRE(p2.has_result());
-        return p1.get() + p2.get();
+        return *p1.get() + *p2.get();
     });
     gcl::Async async{4};
     t.schedule(async);
-    t.wait();
-    REQUIRE(55 == t.get());
+    while (!t.has_result());
+    REQUIRE(55 == *t.get());
 }
 
 TEST_CASE("schedule_with_vec_parents_using_async")
 {
     auto p1 = gcl::task([]{ return 42; });
     auto p2 = gcl::task([]{ return 13; });
-    auto t = gcl::tie(gcl::vec(p1, p2)).then([](gcl::Vec<int> p){ return p[0].get() + p[1].get(); });
+    auto t = gcl::tie(gcl::vec(p1, p2)).then([](gcl::Vec<int> p){ return *p[0].get() + *p[1].get(); });
     gcl::Async async{4};
     t.schedule(async);
-    t.wait();
-    REQUIRE(55 == t.get());
+    while (!t.has_result());
+    REQUIRE(55 == *t.get());
 }
 
 TEST_CASE("schedule_using_reference_type")
 {
     int x = 42;
     auto p = gcl::task([&x]() -> int& { return x; });
-    auto t = p.then([](auto p) -> int& { return p.get(); });
+    auto t = p.then([](auto p) -> int& { return *p.get(); });
     gcl::Async async{4};
     t.schedule(async);
-    t.wait();
-    REQUIRE(42 == p.get());
-    REQUIRE(&x == &p.get());
+    while (!t.has_result());
+    REQUIRE(42 == *p.get());
+    REQUIRE(&x == p.get());
 }
 
 TEST_CASE("schedule_and_release")
@@ -118,7 +118,7 @@ TEST_CASE("schedule_and_release")
     gcl::Async async;
     t.schedule(async);
     REQUIRE(t.valid());
-    REQUIRE(42 == t.get());
+    REQUIRE(42 == *t.get());
     t.release();
     REQUIRE(!t.valid());
 }
@@ -130,8 +130,8 @@ TEST_CASE("schedule_a_wide_graph")
     gcl::Vec<int> tasks;
     for (int i = 0; i < 10; ++i)
     {
-        auto t1 = top.then([&x](auto t){ REQUIRE(t.has_result()); x++; return t.get(); });
-        auto t2 = t1.then([&x](auto t){ REQUIRE(t.has_result()); x++; return t.get(); });
+        auto t1 = top.then([&x](auto t){ REQUIRE(t.has_result()); x++; return *t.get(); });
+        auto t2 = t1.then([&x](auto t){ REQUIRE(t.has_result()); x++; return *t.get(); });
         tasks.push_back(t2);
     }
     auto bottom = gcl::tie(tasks).then([&x](gcl::Vec<int>) { x++; });
@@ -151,7 +151,6 @@ TEST_CASE("schedule_with_mixed_parents")
     auto t = gcl::when(p1, p2, gcl::vec(p3, p4), p6);
     gcl::Async async;
     t.schedule(async);
-    t.wait();
     REQUIRE(5 == x);
 }
 
@@ -214,7 +213,7 @@ TEST_CASE("functor_only_copyable_as_rvalue")
     auto t = gcl::task(CopyOnly{});
     gcl::Async async;
     t.schedule(async);
-    REQUIRE(42 == t.get());
+    REQUIRE(42 == *t.get());
 }
 
 TEST_CASE("functor_only_copyable_as_lvalue")
@@ -223,7 +222,7 @@ TEST_CASE("functor_only_copyable_as_lvalue")
     auto t = gcl::task(functor);
     gcl::Async async;
     t.schedule(async);
-    REQUIRE(42 == t.get());
+    REQUIRE(42 == *t.get());
 }
 
 TEST_CASE("functor_only_copyable_as_const_lvalue")
@@ -232,7 +231,7 @@ TEST_CASE("functor_only_copyable_as_const_lvalue")
     auto t = gcl::task(functor);
     gcl::Async async;
     t.schedule(async);
-    REQUIRE(42 == t.get());
+    REQUIRE(42 == *t.get());
 }
 
 namespace
@@ -256,7 +255,7 @@ TEST_CASE("functor_only_movable")
     auto t = gcl::task(MoveOnly{});
     gcl::Async async;
     t.schedule(async);
-    REQUIRE(42 == t.get());
+    REQUIRE(42 == *t.get());
 }
 
 TEST_CASE("task_chaining_with_int")

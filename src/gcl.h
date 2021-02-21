@@ -5,7 +5,7 @@
 
 #pragma once
 
-#include <future>
+#include <functional>
 #include <memory>
 #include <tuple>
 #include <vector>
@@ -18,6 +18,8 @@
 #define GCL_ASSERT(x) assert(x)
 #endif
 #endif
+
+#include <readerwriterqueue.h>
 
 namespace gcl
 {
@@ -101,32 +103,22 @@ public:
     template<typename Functor>
     auto then(Functor&& functor) &&;
 
-    // Schedules this task and its parents for execution. Blocks until task finishes if currently scheduled.
-    // The result of this function call is valid == true.
-    void schedule(gcl::Exec& e);
+    // Schedules this task and its parents for execution. Returns true if successfully scheduled and false
+    // if already scheduled and not finished. The result of this function call is valid == true.
+    bool schedule(gcl::Exec& e);
 
     // Returns true if this task was scheduled at least once and not released
     bool valid() const;
 
-    // Waits for the task to finish (UB if valid == false)
-    void wait() const;
-
-    // Waits for the given duration for the task to finish (UB if valid == false)
-    template<typename Rep, typename Period>
-    std::future_status wait_for(const std::chrono::duration<Rep, Period>& duration) const;
-
-    // Waits until the given time for the task to finish (UB if valid == false)
-    template<typename Clock, typename Duration>
-    std::future_status wait_until(const std::chrono::time_point<Clock, Duration>& time) const;
-
-    // Returns true if this task has a result (UB if valid == false)
+    // Returns true if this task has a result
     bool has_result() const;
 
     // Auto-release means automatic result clean-up once a parent's result was fully consumed
     void set_auto_release(bool auto_release);
 
-    // Releases this task's result and its parents' results. Blocks until task finishes if currently scheduled.
-    void release();
+    // Releases this task's result and its parents' results. Returns true if successfully scheduled and false
+    // if already scheduled and not finished. The result of this function call is valid == false.
+    bool release();
 
     // Returns the id of the task (unique but changes between runs)
     gcl::TaskId id() const;
@@ -154,8 +146,8 @@ class Task : public gcl::detail::BaseTask<Result>
 {
 public:
 
-    // Returns the task's result. May throw
-    const Result& get() const;
+    // Returns the task's result. Returns null if no result available
+    const Result* get() const;
 
     template<typename Functor, typename... Parents>
     static Task create(Functor&& functor, Parents&&... parents)
@@ -175,8 +167,8 @@ class Task<Result&> : public gcl::detail::BaseTask<Result&>
 {
 public:
 
-    // Returns the task's result. May throw
-    Result& get() const;
+    // Returns the task's result. Returns null if no result available
+    Result* get() const;
 
     template<typename Functor, typename... Parents>
     static Task create(Functor&& functor, Parents&&... parents)
@@ -196,8 +188,8 @@ class Task<void> : public gcl::detail::BaseTask<void>
 {
 public:
 
-    // Returns the task's result. May throw
-    void get() const;
+    // Returns the task's result. Returns false if no result available
+    bool get() const;
 
     template<typename Functor, typename... Parents>
     static Task create(Functor&& functor, Parents&&... parents)
@@ -355,6 +347,200 @@ struct CollectParents
 };
 
 template<typename Result>
+class ChannelElement
+{
+public:
+    ChannelElement(const Result& value)
+        : m_value{value}
+        , m_has_value{true}
+    {}
+    ChannelElement(Result&& value)
+        : m_value{std::move(value)}
+        , m_has_value{true}
+    {}
+    ChannelElement(const std::exception_ptr& exception)
+        : m_exception{exception}
+    {}
+    ChannelElement(std::exception_ptr&& exception)
+        : m_exception{std::move(exception)}
+    {}
+
+    ChannelElement(const ChannelElement&) = delete;
+    ChannelElement& operator=(const ChannelElement&) = delete;
+
+    ChannelElement(ChannelElement&& other) noexcept
+    {
+        m_has_value = other.m_has_value;
+        if (m_has_value)
+        {
+            new (&m_value) Result{std::move(other.m_value)};
+        }
+        else
+        {
+            new (&m_exception) std::exception_ptr{std::move(other.m_exception)};
+        }
+    }
+
+    ChannelElement& operator=(ChannelElement&&) = delete;
+
+    bool has_value() const
+    {
+        return m_has_value;
+    }
+
+    const Result* value() const
+    {
+        return &m_value;
+    }
+
+    const std::exception_ptr& exception() const
+    {
+        return m_exception;
+    }
+
+    ~ChannelElement()
+    {
+        if (m_has_value)
+        {
+            m_value.~Result();
+        }
+        else
+        {
+            m_exception.~exception_ptr();
+        }
+    }
+
+private:
+    union 
+    {
+        Result m_value;
+        std::exception_ptr m_exception;
+    };
+    bool m_has_value = false;
+};
+
+template<typename Result>
+class ChannelElement<Result&>
+{
+public:
+    ChannelElement(Result& value)
+        : m_value{&value}
+        , m_has_value{true}
+    {}
+    ChannelElement(const std::exception_ptr& exception)
+        : m_exception{exception}
+    {}
+    ChannelElement(std::exception_ptr&& exception)
+        : m_exception{std::move(exception)}
+    {}
+
+    ChannelElement(const ChannelElement&) = delete;
+    ChannelElement& operator=(const ChannelElement&) = delete;
+
+    ChannelElement(ChannelElement&& other) noexcept
+    {
+        m_has_value = other.m_has_value;
+        if (m_has_value)
+        {
+            new (&m_value) Result*{std::move(other.m_value)};
+        }
+        else
+        {
+            new (&m_exception) std::exception_ptr{std::move(other.m_exception)};
+        }
+    }
+
+    ChannelElement& operator=(ChannelElement&&) = delete;
+
+    bool has_value() const
+    {
+        return m_has_value;
+    }
+
+    Result* value()
+    {
+        return m_value;
+    }
+
+    const std::exception_ptr& exception() const
+    {
+        return m_exception;
+    }
+
+    ~ChannelElement()
+    {
+        if (!m_has_value)
+        {
+            m_exception.~exception_ptr();
+        }
+    }
+
+private:
+    union 
+    {
+        Result* m_value;
+        std::exception_ptr m_exception;
+    };
+    bool m_has_value = false;
+};
+
+template<>
+class ChannelElement<void>
+{
+public:
+    ChannelElement()
+    {}
+    ChannelElement(const std::exception_ptr& exception)
+        : m_exception{exception}
+    {}
+    ChannelElement(std::exception_ptr&& exception)
+        : m_exception{std::move(exception)}
+    {}
+
+    ChannelElement(const ChannelElement&) = delete;
+    ChannelElement& operator=(const ChannelElement&) = delete;
+    
+    ChannelElement(ChannelElement&& other) = default;
+    ChannelElement& operator=(ChannelElement&&) = delete;
+
+    bool has_value() const
+    {
+        return !m_exception;
+    }
+
+    const std::exception_ptr& exception() const
+    {
+        return m_exception;
+    }
+
+private:
+    std::exception_ptr m_exception;
+};
+
+template<typename Result>
+class Channel
+{
+public:
+    Channel() = default;
+
+    Channel(const Channel&) = delete;
+    Channel& operator=(const Channel&) = delete;
+
+    void set(gcl::detail::ChannelElement<Result>&& element)
+    {
+        m_impl.enqueue(std::move(element));
+    }
+
+    gcl::detail::ChannelElement<Result>* get() const
+    {
+        return m_impl.peek();
+    }
+
+private:
+    moodycamel::ReaderWriterQueue<gcl::detail::ChannelElement<Result>> m_impl{1};
+};
+
+template<typename Result>
 class Binding
 {
 public:
@@ -392,15 +578,15 @@ private:
 template<typename Result>
 struct Evaluate
 {
-    void operator()(std::promise<Result>& promise, gcl::detail::Binding<Result>& binding) const
+    void operator()(gcl::detail::Channel<Result>& channel, gcl::detail::Binding<Result>& binding) const
     {
         try
         {
-            promise.set_value(binding.evaluate());
+            channel.set(binding.evaluate());
         }
         catch (...)
         {
-            promise.set_exception(std::current_exception());
+            channel.set(std::current_exception());
         }
     }
 };
@@ -408,16 +594,16 @@ struct Evaluate
 template<>
 struct Evaluate<void>
 {
-    void operator()(std::promise<void>& promise, gcl::detail::Binding<void>& binding) const
+    void operator()(gcl::detail::Channel<void>& channel, gcl::detail::Binding<void>& binding) const
     {
         try
         {
             binding.evaluate();
-            promise.set_value();
+            channel.set({});
         }
         catch (...)
         {
-            promise.set_exception(std::current_exception());
+            channel.set(std::current_exception());
         }
     }
 };
@@ -437,8 +623,8 @@ struct BaseTask<Result>::Impl : BaseImpl
     {
         m_parents_ready = 0;
         m_children_ready = 0;
-        m_promise = {};
-        m_future = m_promise.get_future();
+        m_channel.reset();
+        m_channel = std::make_unique<Channel<Result>>();
     }
 
     void schedule(Exec& exec) override
@@ -451,17 +637,16 @@ struct BaseTask<Result>::Impl : BaseImpl
 
     void call() override
     {
-        gcl::detail::Evaluate<Result>{}(m_promise, *m_binding);
+        gcl::detail::Evaluate<Result>{}(*m_channel, *m_binding);
     }
 
     void release() override
     {
-        m_future = {};
+        m_channel.reset();
     }
 
     std::unique_ptr<gcl::detail::Binding<Result>> m_binding;
-    std::promise<Result> m_promise;
-    std::shared_future<Result> m_future;
+    std::unique_ptr<Channel<Result>> m_channel;
 };
 
 template<typename Result>
@@ -486,50 +671,27 @@ void BaseTask<Result>::init(Functor&& functor, Parents&&... parents)
 }
 
 template<typename Result>
-void BaseTask<Result>::schedule(Exec& exec)
+bool BaseTask<Result>::schedule(Exec& exec)
 {
-    if (valid())
+    if (valid() && !has_result())
     {
-        wait(); // no-op if future has a result
+        return false;
     }
     m_impl->unvisit(true);
     m_impl->visit([&exec](BaseImpl& i){ i.schedule(exec); });
+    return true;
 }
 
 template<typename Result>
 bool BaseTask<Result>::valid() const
 {
-    return m_impl->m_future.valid();
-}
-
-template<typename Result>
-void BaseTask<Result>::wait() const
-{
-    GCL_ASSERT(valid());
-    m_impl->m_future.wait();
-}
-
-template<typename Result>
-template<typename Rep, typename Period>
-std::future_status BaseTask<Result>::wait_for(const std::chrono::duration<Rep, Period>& duration) const
-{
-    GCL_ASSERT(valid());
-    return m_impl->m_future.wait_for(duration);
-}
-
-template<typename Result>
-template<typename Clock, typename Duration>
-std::future_status BaseTask<Result>::wait_until(const std::chrono::time_point<Clock, Duration>& time) const
-{
-    GCL_ASSERT(valid());
-    return m_impl->m_future.wait_until(time);
+    return m_impl->m_channel != nullptr;
 }
 
 template<typename Result>
 bool BaseTask<Result>::has_result() const
 {
-    GCL_ASSERT(valid());
-    return m_impl->m_future.wait_for(std::chrono::seconds{0}) == std::future_status::ready;
+    return m_impl->m_channel && m_impl->m_channel->get();
 }
 
 template<typename Result>
@@ -540,14 +702,15 @@ void BaseTask<Result>::set_auto_release(const bool auto_release)
 }
 
 template<typename Result>
-void BaseTask<Result>::release()
+bool BaseTask<Result>::release()
 {
-    if (valid())
+    if (valid() && !has_result())
     {
-        wait(); // no-op if future has a result
+        return false;
     }
     m_impl->unvisit();
     m_impl->visit([](BaseImpl& i){ i.release(); });
+    return true;
 }
 
 template<typename Result>
@@ -565,24 +728,60 @@ std::vector<gcl::Edge> BaseTask<Result>::edges() const
 } // detail
 
 template<typename Result>
-const Result& Task<Result>::get() const
+const Result* Task<Result>::get() const
 {
-    GCL_ASSERT(this->valid());
-    return this->m_impl->m_future.get();
+    if (this->m_impl->m_channel)
+    {
+        if (const auto element = this->m_impl->m_channel->get())
+        {
+            if (element->has_value())
+            {
+                return element->value();
+            }
+            else
+            {
+                std::rethrow_exception(element->exception());
+            }
+        }
+    }
+    return nullptr;
 }
 
 template<typename Result>
-Result& Task<Result&>::get() const
+Result* Task<Result&>::get() const
 {
-    GCL_ASSERT(this->valid());
-    return this->m_impl->m_future.get();
+    if (this->m_impl->m_channel)
+    {
+        if (const auto element = this->m_impl->m_channel->get())
+        {
+            if (element->has_value())
+            {
+                return element->value();
+            }
+            else
+            {
+                std::rethrow_exception(element->exception());
+            }
+        }
+    }
+    return nullptr;
 }
 
 inline
-void Task<void>::get() const
+bool Task<void>::get() const
 {
-    GCL_ASSERT(this->valid());
-    this->m_impl->m_future.get();
+    if (this->m_impl->m_channel)
+    {
+        if (const auto element = this->m_impl->m_channel->get())
+        {
+            if (!element->has_value())
+            {
+                std::rethrow_exception(element->exception());
+            }
+            return true;
+        }
+    }
+    return false;
 }
 
 // Ties tasks together which can be of type `Task` and/or `Vec`
