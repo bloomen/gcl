@@ -526,6 +526,14 @@ public:
     Channel(const Channel&) = delete;
     Channel& operator=(const Channel&) = delete;
 
+    ~Channel()
+    {
+        if (const auto element = m_element.load())
+        {
+            element->~ChannelElement();
+        }
+    }
+
     // producer
     void set(gcl::detail::ChannelElement<Result>&& element)
     {
