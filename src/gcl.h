@@ -5,6 +5,8 @@
 
 #pragma once
 
+#include <atomic>
+#include <chrono>
 #include <functional>
 #include <memory>
 #include <tuple>
@@ -18,8 +20,6 @@
 #define GCL_ASSERT(x) assert(x)
 #endif
 #endif
-
-#include <readerwriterqueue.h>
 
 namespace gcl
 {
@@ -526,18 +526,22 @@ public:
     Channel(const Channel&) = delete;
     Channel& operator=(const Channel&) = delete;
 
+    // producer
     void set(gcl::detail::ChannelElement<Result>&& element)
     {
-        m_impl.enqueue(std::move(element));
+        new (m_storage.data()) gcl::detail::ChannelElement<Result>{std::move(element)};
+        m_element.store(reinterpret_cast<gcl::detail::ChannelElement<Result>*>(m_storage.data()));
     }
 
+    // consumer
     gcl::detail::ChannelElement<Result>* get() const
     {
-        return m_impl.peek();
+        return m_element.load();
     }
 
 private:
-    moodycamel::ReaderWriterQueue<gcl::detail::ChannelElement<Result>> m_impl{1};
+    std::array<char, sizeof(gcl::detail::ChannelElement<Result>)> m_storage;
+    std::atomic<gcl::detail::ChannelElement<Result>*> m_element{nullptr};
 };
 
 template<typename Result>
