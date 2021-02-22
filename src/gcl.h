@@ -9,6 +9,7 @@
 #include <chrono>
 #include <functional>
 #include <memory>
+#include <thread>
 #include <tuple>
 #include <vector>
 
@@ -112,6 +113,9 @@ public:
 
     // Returns true if this task has a result
     bool has_result() const;
+
+    // Waits for this task to finish
+    void wait(bool yields = true, std::chrono::microseconds sleep_interval = std::chrono::microseconds{0}) const;
 
     // Auto-release means automatic result clean-up once a parent's result was fully consumed
     void set_auto_release(bool auto_release);
@@ -578,6 +582,9 @@ public:
     {
         return gcl::detail::call([this](auto&&... p) -> Result
                                  {
+#ifndef NDEBUG
+                                     gcl::detail::for_each([](const auto& p){ GCL_ASSERT(p.has_result()); }, p...);
+#endif
                                      return m_functor(std::forward<decltype(p)>(p)...);
                                  }, m_parents);
     }
@@ -704,6 +711,22 @@ template<typename Result>
 bool BaseTask<Result>::has_result() const
 {
     return m_impl->m_channel && m_impl->m_channel->get();
+}
+
+template<typename Result>
+void BaseTask<Result>::wait(const bool yields, const std::chrono::microseconds sleep_interval) const
+{
+    while (!has_result())
+    {
+        if (yields)
+        {
+            std::this_thread::yield();
+        }
+        if (sleep_interval > std::chrono::microseconds{0})
+        {
+            std::this_thread::sleep_for(sleep_interval);
+        }
+    }
 }
 
 template<typename Result>

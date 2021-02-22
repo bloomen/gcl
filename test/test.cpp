@@ -84,7 +84,7 @@ TEST_CASE("schedule_using_async")
     });
     gcl::Async async{4};
     t.schedule(async);
-    while (!t.has_result());
+    t.wait();
     REQUIRE(55 == *t.get());
 }
 
@@ -95,7 +95,7 @@ TEST_CASE("schedule_with_vec_parents_using_async")
     auto t = gcl::tie(gcl::vec(p1, p2)).then([](gcl::Vec<int> p){ return *p[0].get() + *p[1].get(); });
     gcl::Async async{4};
     t.schedule(async);
-    while (!t.has_result());
+    t.wait();
     REQUIRE(55 == *t.get());
 }
 
@@ -106,7 +106,7 @@ TEST_CASE("schedule_using_reference_type")
     auto t = p.then([](auto p) -> int& { return *p.get(); });
     gcl::Async async{4};
     t.schedule(async);
-    while (!t.has_result());
+    t.wait();
     REQUIRE(42 == *p.get());
     REQUIRE(&x == p.get());
 }
@@ -123,9 +123,9 @@ TEST_CASE("schedule_and_release")
     REQUIRE(!t.valid());
 }
 
-TEST_CASE("schedule_a_wide_graph")
+void test_schedule_a_wide_graph(const std::size_t n_threads)
 {
-    int x = 0;
+    std::atomic<int> x = 0;
     auto top = gcl::task([&x]{ return x++; });
     gcl::Vec<int> tasks;
     for (int i = 0; i < 10; ++i)
@@ -135,9 +135,20 @@ TEST_CASE("schedule_a_wide_graph")
         tasks.push_back(t2);
     }
     auto bottom = gcl::tie(tasks).then([&x](gcl::Vec<int>) { x++; });
-    gcl::Async async;
+    gcl::Async async{n_threads};
     bottom.schedule(async);
+    bottom.wait();
     REQUIRE(22 == x);
+}
+
+TEST_CASE("schedule_a_wide_graph")
+{
+    test_schedule_a_wide_graph(0);
+}
+
+TEST_CASE("schedule_a_wide_graph_with_threads")
+{
+    test_schedule_a_wide_graph(4);
 }
 
 TEST_CASE("schedule_with_mixed_parents")
