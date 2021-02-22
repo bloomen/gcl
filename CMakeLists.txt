@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 2.8)
+cmake_minimum_required(VERSION 3.0)
 project(gcl)
 enable_testing()
 
@@ -9,8 +9,8 @@ include_directories(readerwriterqueue)
 find_package(Threads)
 
 add_library(gcl src/gcl.h src/gcl.cpp)
-
-install(TARGETS gcl)
+set_target_properties(gcl PROPERTIES PUBLIC_HEADER src/gcl.h)
+install(TARGETS gcl LIBRARY DESTINATION lib PUBLIC_HEADER DESTINATION include)
 
 add_executable(gcl_test src/gcl.h test/catch.hpp test/test.cpp)
 target_link_libraries(gcl_test gcl)
