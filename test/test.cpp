@@ -125,7 +125,7 @@ TEST_CASE("schedule_and_release")
 
 void test_schedule_a_wide_graph(const std::size_t n_threads)
 {
-    std::atomic<int> x = 0;
+    std::atomic<int> x{0};
     auto top = gcl::task([&x]{ return x++; });
     gcl::Vec<int> tasks;
     for (int i = 0; i < 10; ++i)
