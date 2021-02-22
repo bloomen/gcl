@@ -10,7 +10,7 @@ find_package(Threads)
 
 add_library(gcl src/gcl.h src/gcl.cpp)
 set_target_properties(gcl PROPERTIES PUBLIC_HEADER src/gcl.h)
-install(TARGETS gcl LIBRARY DESTINATION lib PUBLIC_HEADER DESTINATION include)
+install(TARGETS gcl ARCHIVE DESTINATION lib LIBRARY DESTINATION lib PUBLIC_HEADER DESTINATION include)
 
 add_executable(gcl_test src/gcl.h test/catch.hpp test/test.cpp)
 target_link_libraries(gcl_test gcl)
