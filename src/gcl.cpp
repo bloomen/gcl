@@ -210,6 +210,7 @@ private:
                 parent->auto_release();
             }
         }
+        task.set_finished();
         for (const auto child : task.children())
         {
             if (child->set_parent_finished())
@@ -269,6 +270,11 @@ void detail::BaseImpl::auto_release()
     {
         release();
     }
+}
+
+void detail::BaseImpl::set_finished()
+{
+    m_finished = true;
 }
 
 void detail::BaseImpl::set_auto_release(const bool auto_release)

@@ -36,6 +36,7 @@ public:
     virtual bool set_parent_finished() = 0;
     virtual bool set_child_finished() = 0;
     virtual void auto_release() = 0;
+    virtual void set_finished() = 0;
 };
 
 // Executor interface for running tasks
@@ -301,6 +302,7 @@ public:
     bool set_parent_finished() override;
     bool set_child_finished() override;
     void auto_release() override;
+    void set_finished() override;
 
     virtual void reset() = 0;
     virtual void schedule(Exec& exec) = 0;
@@ -333,6 +335,7 @@ protected:
     BaseImpl() = default;
 
     std::atomic<bool> m_auto_release{false};
+    std::atomic<bool> m_finished{false};
     bool m_visited = true;
     std::vector<gcl::ITask*> m_parents;
     std::vector<gcl::ITask*> m_children;
@@ -525,7 +528,10 @@ template<typename Result>
 class Channel
 {
 public:
-    Channel() = default;
+    explicit
+    Channel(const std::atomic<bool>& finished)
+        : m_finished{finished}
+    {}
 
     Channel(const Channel&) = delete;
     Channel& operator=(const Channel&) = delete;
@@ -548,10 +554,15 @@ public:
     // consumer
     gcl::detail::ChannelElement<Result>* get() const
     {
+        if (!m_finished)
+        {
+            return nullptr;
+        }
         return m_element.load();
     }
 
 private:
+    const std::atomic<bool>& m_finished;
     char m_storage[sizeof(gcl::detail::ChannelElement<Result>)];
     std::atomic<gcl::detail::ChannelElement<Result>*> m_element{nullptr};
 };
@@ -640,10 +651,11 @@ struct BaseTask<Result>::Impl : BaseImpl
 
     void reset() override
     {
+        m_finished = false;
         m_parents_ready = 0;
         m_children_ready = 0;
         m_channel.reset();
-        m_channel = std::make_unique<Channel<Result>>();
+        m_channel = std::make_unique<Channel<Result>>(m_finished);
     }
 
     void schedule(Exec& exec) override
