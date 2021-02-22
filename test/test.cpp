@@ -22,7 +22,7 @@ void test_schedule(const std::size_t n_threads)
         return *p1.get() + *p2.get();
     });
     gcl::Async async{n_threads};
-    t.schedule(async);
+    REQUIRE(t.schedule(async));
     REQUIRE(p1.valid());
     REQUIRE(p2.valid());
     REQUIRE(t.valid());
@@ -59,7 +59,7 @@ void test_schedule_and_cancel(const std::size_t n_threads)
     });
     ct.set_canceled();
     gcl::Async async{n_threads};
-    t.schedule(async);
+    REQUIRE(t.schedule(async));
     t.wait();
     REQUIRE(-1 == *t.get());
 }
@@ -88,7 +88,7 @@ void test_schedule_and_auto_release(const std::size_t n_threads)
     });
     t.set_auto_release(true);
     gcl::Async async{n_threads};
-    t.schedule(async);
+    REQUIRE(t.schedule(async));
     t.wait();
     REQUIRE(!p1.valid());
     REQUIRE(!p2.valid());
@@ -117,7 +117,7 @@ TEST_CASE("schedule_with_vec_parents")
     auto p2 = gcl::task([]{ return 13; });
     auto t = gcl::tie(gcl::vec(p1, p2)).then([](gcl::Vec<int> p){ return *p[0].get() + *p[1].get(); });
     gcl::Async async;
-    t.schedule(async);
+    REQUIRE(t.schedule(async));
     REQUIRE(55 == *t.get());
 }
 
@@ -127,7 +127,7 @@ TEST_CASE("schedule_using_reference_type")
     auto p = gcl::task([&x]() -> int& { return x; });
     auto t = p.then([](auto p) -> int& { return *p.get(); });
     gcl::Async async{4};
-    t.schedule(async);
+    REQUIRE(t.schedule(async));
     t.wait();
     REQUIRE(42 == *p.get());
     REQUIRE(&x == p.get());
@@ -138,10 +138,10 @@ TEST_CASE("schedule_and_release")
     auto t = gcl::task([]{ return 42; });
     REQUIRE(!t.valid());
     gcl::Async async;
-    t.schedule(async);
+    REQUIRE(t.schedule(async));
     REQUIRE(t.valid());
     REQUIRE(42 == *t.get());
-    t.release();
+    REQUIRE(t.release());
     REQUIRE(!t.valid());
 }
 
@@ -158,7 +158,7 @@ void test_schedule_a_wide_graph(const std::size_t n_threads)
     }
     auto bottom = gcl::tie(tasks).then([&x](gcl::Vec<int>) { x++; });
     gcl::Async async{n_threads};
-    bottom.schedule(async);
+    REQUIRE(bottom.schedule(async));
     bottom.wait();
     REQUIRE(22 == x);
 }
@@ -188,7 +188,7 @@ TEST_CASE("schedule_with_mixed_parents")
     auto p6 = gcl::task([&x]{ x++; return std::string{"guan"}; });
     auto t = gcl::when(p1, p2, gcl::vec(p3, p4), p6);
     gcl::Async async;
-    t.schedule(async);
+    REQUIRE(t.schedule(async));
     REQUIRE(5 == x);
 }
 
@@ -199,7 +199,7 @@ TEST_CASE("schedule_with_bind_and_when")
     auto p2 = gcl::task([&x]{ x++; });
     auto t = gcl::when(gcl::tie(p1, p2));
     gcl::Async async;
-    t.schedule(async);
+    REQUIRE(t.schedule(async));
     REQUIRE(2 == x);
 }
 
@@ -209,7 +209,7 @@ TEST_CASE("edges")
     auto p2 = gcl::task([]{ return 13; });
     auto t = gcl::when(p1, p2);
     gcl::Async async;
-    t.schedule(async);
+    REQUIRE(t.schedule(async));
     const std::vector<gcl::Edge> exp_edges = {
         {p1.id(), t.id()},
         {p2.id(), t.id()}
@@ -224,10 +224,10 @@ void test_schedule_twice(const std::size_t n_threads)
     auto p2 = gcl::task([&x]{ x++; });
     auto t = gcl::when(p1, p2);
     gcl::Async async{n_threads};
-    t.schedule(async);
+    REQUIRE(t.schedule(async));
     t.wait();
     REQUIRE(2 == x);
-    t.schedule(async);
+    REQUIRE(t.schedule(async));
     t.wait();
     REQUIRE(4 == x);
 }
@@ -267,7 +267,7 @@ TEST_CASE("functor_only_copyable_as_rvalue")
 {
     auto t = gcl::task(CopyOnly{});
     gcl::Async async;
-    t.schedule(async);
+    REQUIRE(t.schedule(async));
     REQUIRE(42 == *t.get());
 }
 
@@ -276,7 +276,7 @@ TEST_CASE("functor_only_copyable_as_lvalue")
     CopyOnly functor;
     auto t = gcl::task(functor);
     gcl::Async async;
-    t.schedule(async);
+    REQUIRE(t.schedule(async));
     REQUIRE(42 == *t.get());
 }
 
@@ -285,7 +285,7 @@ TEST_CASE("functor_only_copyable_as_const_lvalue")
     const CopyOnly functor;
     auto t = gcl::task(functor);
     gcl::Async async;
-    t.schedule(async);
+    REQUIRE(t.schedule(async));
     REQUIRE(42 == *t.get());
 }
 
@@ -309,7 +309,7 @@ TEST_CASE("functor_only_movable")
 {
     auto t = gcl::task(MoveOnly{});
     gcl::Async async;
-    t.schedule(async);
+    REQUIRE(t.schedule(async));
     REQUIRE(42 == *t.get());
 }
 
@@ -319,7 +319,7 @@ TEST_CASE("task_chaining_with_int")
     auto f = [&x](auto){ x++; return 0; };
     auto t = gcl::task([&x]{ x++; return 0; }).then(f).then(f).then(f).then(f);
     gcl::Async async;
-    t.schedule(async);
+    REQUIRE(t.schedule(async));
     REQUIRE(5 == x);
 }
 
@@ -329,7 +329,7 @@ TEST_CASE("task_chaining_with_void")
     auto f = [&x](gcl::Task<void> t){ REQUIRE(t.has_result()); x++; };
     auto t = gcl::task([&x]{ x++; }).then(f).then(f).then(f).then(f);
     gcl::Async async;
-    t.schedule(async);
+    REQUIRE(t.schedule(async));
     REQUIRE(5 == x);
 }
 
@@ -338,7 +338,7 @@ void test_for_each(const std::size_t n_threads)
     std::vector<double> data{1, 2, 3, 4, 5};
     auto t = gcl::for_each(data.begin(), data.end(), [](auto it){ *it *= 2; });
     gcl::Async async{n_threads};
-    t.schedule(async);
+    REQUIRE(t.schedule(async));
     t.wait();
     const std::vector<double> data_exp{2, 4, 6, 8, 10};
     REQUIRE(data_exp == data);
