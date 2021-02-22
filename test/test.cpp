@@ -170,7 +170,7 @@ TEST_CASE("schedule_a_wide_graph")
 
 TEST_CASE("schedule_a_wide_graph_with_1_thread")
 {
-    test_schedule_a_wide_graph(4);
+    test_schedule_a_wide_graph(1);
 }
 
 TEST_CASE("schedule_a_wide_graph_with_4_threads")
@@ -219,7 +219,7 @@ TEST_CASE("edges")
 
 void test_schedule_twice(const std::size_t n_threads)
 {
-    int x = 0;
+    std::atomic<int> x{0};
     auto p1 = gcl::task([&x]{ x++; });
     auto p2 = gcl::task([&x]{ x++; });
     auto t = gcl::when(p1, p2);
