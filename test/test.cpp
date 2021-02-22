@@ -12,7 +12,7 @@ bool operator==(const Edge& lhs, const Edge& rhs)
 
 }
 
-TEST_CASE("schedule")
+void test_schedule(const std::size_t n_threads)
 {
     auto p1 = gcl::task([]{ return 42; });
     auto p2 = gcl::task([]{ return 13; });
@@ -21,15 +21,31 @@ TEST_CASE("schedule")
         REQUIRE(p2.has_result());
         return *p1.get() + *p2.get();
     });
-    gcl::Async async;
+    gcl::Async async{n_threads};
     t.schedule(async);
     REQUIRE(p1.valid());
     REQUIRE(p2.valid());
     REQUIRE(t.valid());
+    t.wait();
     REQUIRE(55 == *t.get());
 }
 
-TEST_CASE("schedule_and_cancel")
+TEST_CASE("schedule")
+{
+    test_schedule(0);
+}
+
+TEST_CASE("schedule_with_1_thread")
+{
+    test_schedule(1);
+}
+
+TEST_CASE("schedule_with_4_threads")
+{
+    test_schedule(4);
+}
+
+void test_schedule_and_cancel(const std::size_t n_threads)
 {
     auto p1 = gcl::task([]{ return 42; });
     auto p2 = gcl::task([]{ return 13; });
@@ -42,12 +58,28 @@ TEST_CASE("schedule_and_cancel")
         return *p1.get() + *p2.get();
     });
     ct.set_canceled();
-    gcl::Async async;
+    gcl::Async async{n_threads};
     t.schedule(async);
+    t.wait();
     REQUIRE(-1 == *t.get());
 }
 
-TEST_CASE("schedule_and_auto_release")
+TEST_CASE("schedule_and_cancel")
+{
+    test_schedule_and_cancel(0);
+}
+
+TEST_CASE("schedule_and_cancel_with_1_thread")
+{
+    test_schedule_and_cancel(1);
+}
+
+TEST_CASE("schedule_and_cancel_with_4_threads")
+{
+    test_schedule_and_cancel(4);
+}
+
+void test_schedule_and_auto_release(const std::size_t n_threads)
 {
     auto p1 = gcl::task([]{ return 42; });
     auto p2 = gcl::task([]{ return 13; });
@@ -55,12 +87,28 @@ TEST_CASE("schedule_and_auto_release")
         return *p1.get() + *p2.get();
     });
     t.set_auto_release(true);
-    gcl::Async async;
+    gcl::Async async{n_threads};
     t.schedule(async);
+    t.wait();
     REQUIRE(!p1.valid());
     REQUIRE(!p2.valid());
     REQUIRE(t.valid());
     REQUIRE(55 == *t.get());
+}
+
+TEST_CASE("schedule_and_auto_release")
+{
+    test_schedule_and_auto_release(0);
+}
+
+TEST_CASE("schedule_and_auto_release_with_1_thread")
+{
+    test_schedule_and_auto_release(1);
+}
+
+TEST_CASE("schedule_and_auto_release_with_4_threads")
+{
+    test_schedule_and_auto_release(4);
 }
 
 TEST_CASE("schedule_with_vec_parents")
@@ -70,32 +118,6 @@ TEST_CASE("schedule_with_vec_parents")
     auto t = gcl::tie(gcl::vec(p1, p2)).then([](gcl::Vec<int> p){ return *p[0].get() + *p[1].get(); });
     gcl::Async async;
     t.schedule(async);
-    REQUIRE(55 == *t.get());
-}
-
-TEST_CASE("schedule_using_async")
-{
-    auto p1 = gcl::task([]{ return 42; });
-    auto p2 = gcl::task([]{ return 13; });
-    auto t = gcl::tie(p1, p2).then([](auto p1, auto p2){
-        REQUIRE(p1.has_result());
-        REQUIRE(p2.has_result());
-        return *p1.get() + *p2.get();
-    });
-    gcl::Async async{4};
-    t.schedule(async);
-    t.wait();
-    REQUIRE(55 == *t.get());
-}
-
-TEST_CASE("schedule_with_vec_parents_using_async")
-{
-    auto p1 = gcl::task([]{ return 42; });
-    auto p2 = gcl::task([]{ return 13; });
-    auto t = gcl::tie(gcl::vec(p1, p2)).then([](gcl::Vec<int> p){ return *p[0].get() + *p[1].get(); });
-    gcl::Async async{4};
-    t.schedule(async);
-    t.wait();
     REQUIRE(55 == *t.get());
 }
 
@@ -146,7 +168,12 @@ TEST_CASE("schedule_a_wide_graph")
     test_schedule_a_wide_graph(0);
 }
 
-TEST_CASE("schedule_a_wide_graph_with_threads")
+TEST_CASE("schedule_a_wide_graph_with_1_thread")
+{
+    test_schedule_a_wide_graph(4);
+}
+
+TEST_CASE("schedule_a_wide_graph_with_4_threads")
 {
     test_schedule_a_wide_graph(4);
 }
@@ -190,17 +217,34 @@ TEST_CASE("edges")
     REQUIRE(exp_edges == t.edges());
 }
 
-TEST_CASE("schedule_twice")
+void test_schedule_twice(const std::size_t n_threads)
 {
     int x = 0;
     auto p1 = gcl::task([&x]{ x++; });
     auto p2 = gcl::task([&x]{ x++; });
     auto t = gcl::when(p1, p2);
-    gcl::Async async;
+    gcl::Async async{n_threads};
     t.schedule(async);
+    t.wait();
     REQUIRE(2 == x);
     t.schedule(async);
+    t.wait();
     REQUIRE(4 == x);
+}
+
+TEST_CASE("schedule_twice")
+{
+    test_schedule_twice(0);
+}
+
+TEST_CASE("schedule_twice_with_1_thread")
+{
+    test_schedule_twice(1);
+}
+
+TEST_CASE("schedule_twice_with_4_thread")
+{
+    test_schedule_twice(4);
 }
 
 namespace
@@ -287,4 +331,30 @@ TEST_CASE("task_chaining_with_void")
     gcl::Async async;
     t.schedule(async);
     REQUIRE(5 == x);
+}
+
+void test_for_each(const std::size_t n_threads)
+{
+    std::vector<double> data{1, 2, 3, 4, 5};
+    auto t = gcl::for_each(data.begin(), data.end(), [](auto it){ *it *= 2; });
+    gcl::Async async{n_threads};
+    t.schedule(async);
+    t.wait();
+    const std::vector<double> data_exp{2, 4, 6, 8, 10};
+    REQUIRE(data_exp == data);
+}
+
+TEST_CASE("for_each")
+{
+    test_for_each(0);
+}
+
+TEST_CASE("for_each_with_1_thread")
+{
+    test_for_each(1);
+}
+
+TEST_CASE("for_each_with_4_threads")
+{
+    test_for_each(4);
 }
