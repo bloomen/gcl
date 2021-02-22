@@ -2,7 +2,7 @@
 
 [![Travis](https://travis-ci.org/bloomen/gcl.svg?branch=master)](https://travis-ci.org/bloomen/gcl/branches) [![Appveyor](https://ci.appveyor.com/api/projects/status/memx407sve38sbj0?svg=true)](https://ci.appveyor.com/project/bloomen/gcl?branch=master)
 
-A tiny graph concurrent library for C++ that allows you to build a computational
+A tiny *g*raph *c*oncurrent *l*ibrary for C++ that allows you to build a computational
 graph with a minimal interface and a small memory footprint.
 Requires a C++14 compliant compiler. Tested with Clang, GCC, and Visual Studio.
 
