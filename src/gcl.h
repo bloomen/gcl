@@ -9,8 +9,10 @@
 #include <chrono>
 #include <functional>
 #include <memory>
+#include <queue>
 #include <thread>
 #include <tuple>
+#include <unordered_set>
 #include <vector>
 
 #ifndef GCL_ASSERT
@@ -308,7 +310,6 @@ public:
     void set_finished() override;
 
     virtual void reset() = 0;
-    virtual void schedule(Exec& exec) = 0;
     virtual void release() = 0;
 
     void set_auto_release(bool auto_release);
@@ -316,19 +317,26 @@ public:
     template<typename Visitor>
     void visit(const Visitor& visitor)
     {
-        if (m_visited)
-        {
-            return;
-        }
-        m_visited = true;
-        for (const auto& parent : m_parents)
-        {
-            static_cast<BaseImpl*>(parent)->visit(visitor);
-        }
+        std::unordered_set<BaseImpl*> visited{this};
         visitor(*this);
+        std::queue<BaseImpl*> q;
+        q.emplace(this);
+        while (!q.empty())
+        {
+            const BaseImpl* const v = q.front();
+            q.pop();
+            for (gcl::ITask* const p : v->m_parents)
+            {
+                const auto w = static_cast<BaseImpl*>(p);
+                if (visited.find(w) == visited.end())
+                {
+                    q.emplace(w);
+                    visited.insert(w);
+                    visitor(*w);
+                }
+            }
+        }
     }
-
-    void unvisit(bool perform_reset = false);
 
     void add_parent(BaseImpl& impl);
     gcl::TaskId id() const;
@@ -339,7 +347,6 @@ protected:
 
     std::atomic<bool> m_auto_release{false};
     std::atomic<bool> m_finished{false};
-    bool m_visited = true;
     std::vector<gcl::ITask*> m_parents;
     std::vector<gcl::ITask*> m_children;
     std::uint32_t m_parents_ready = 0;
@@ -659,14 +666,6 @@ struct BaseTask<Result>::Impl : BaseImpl
         m_channel = std::make_unique<Channel<Result>>(m_finished);
     }
 
-    void schedule(Exec& exec) override
-    {
-        if (m_parents.empty())
-        {
-            exec.execute(*this);
-        }
-    }
-
     void call() override
     {
         gcl::detail::Evaluate<Result>{}(*m_channel, *m_binding);
@@ -709,8 +708,19 @@ bool BaseTask<Result>::schedule(Exec& exec)
     {
         return false;
     }
-    m_impl->unvisit(true);
-    m_impl->visit([&exec](BaseImpl& i){ i.schedule(exec); });
+    std::vector<gcl::ITask*> roots;
+    m_impl->visit([&roots](BaseImpl& i)
+    {
+        i.reset();
+        if (i.parents().empty())
+        {
+            roots.emplace_back(&i);
+        }
+    });
+    for (const auto root : roots)
+    {
+        exec.execute(*root);
+    }
     return true;
 }
 
@@ -745,7 +755,6 @@ void BaseTask<Result>::wait(const bool yields, const std::chrono::microseconds s
 template<typename Result>
 void BaseTask<Result>::set_auto_release(const bool auto_release)
 {
-    m_impl->unvisit();
     m_impl->visit([auto_release](BaseImpl& i){ i.set_auto_release(auto_release); });
 }
 
@@ -756,7 +765,6 @@ bool BaseTask<Result>::release()
     {
         return false;
     }
-    m_impl->unvisit();
     m_impl->visit([](BaseImpl& i){ i.release(); });
     return true;
 }

@@ -6,9 +6,6 @@
 #include "gcl.h"
 
 #include <forward_list>
-#include <queue>
-#include <set>
-#include <thread>
 
 #include <concurrentqueue.h>
 #include <readerwriterqueue.h>
@@ -282,23 +279,6 @@ void detail::BaseImpl::set_auto_release(const bool auto_release)
     m_auto_release = auto_release;
 }
 
-void detail::BaseImpl::unvisit(const bool perform_reset)
-{
-    if (!m_visited)
-    {
-        return;
-    }
-    m_visited = false;
-    if (perform_reset)
-    {
-        reset();
-    }
-    for (const auto parent : m_parents)
-    {
-        static_cast<BaseImpl*>(parent)->unvisit(perform_reset);
-    }
-}
-
 void detail::BaseImpl::add_parent(BaseImpl& impl)
 {
     m_parents.emplace_back(&impl);
@@ -312,7 +292,6 @@ TaskId detail::BaseImpl::id() const
 
 std::vector<Edge> detail::BaseImpl::edges()
 {
-    unvisit();
     std::vector<Edge> es;
     visit([&es](BaseImpl& i)
     {
