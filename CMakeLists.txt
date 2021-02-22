@@ -10,6 +10,8 @@ find_package(Threads)
 
 add_library(gcl src/gcl.h src/gcl.cpp)
 
+install(TARGETS gcl)
+
 add_executable(gcl_test src/gcl.h test/catch.hpp test/test.cpp)
 target_link_libraries(gcl_test gcl)
 
