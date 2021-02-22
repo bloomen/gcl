@@ -541,7 +541,7 @@ public:
 
     ~Channel()
     {
-        if (const auto element = m_element.load())
+        if (const auto element = get())
         {
             element->~ChannelElement();
         }
@@ -551,23 +551,21 @@ public:
     void set(gcl::detail::ChannelElement<Result>&& element)
     {
         new (m_storage) gcl::detail::ChannelElement<Result>{std::move(element)};
-        m_element.store(reinterpret_cast<gcl::detail::ChannelElement<Result>*>(m_storage));
     }
 
     // consumer
-    gcl::detail::ChannelElement<Result>* get() const
+    gcl::detail::ChannelElement<Result>* get()
     {
         if (!m_finished)
         {
             return nullptr;
         }
-        return m_element.load();
+        return reinterpret_cast<gcl::detail::ChannelElement<Result>*>(m_storage);
     }
 
 private:
     const std::atomic<bool>& m_finished;
     char m_storage[sizeof(gcl::detail::ChannelElement<Result>)];
-    std::atomic<gcl::detail::ChannelElement<Result>*> m_element{nullptr};
 };
 
 template<typename Result>
