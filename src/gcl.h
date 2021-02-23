@@ -483,7 +483,7 @@ public:
         return m_has_value;
     }
 
-    Result* value()
+    Result* value() const
     {
         return m_value;
     }
@@ -570,13 +570,13 @@ public:
     }
 
     // consumer
-    gcl::detail::ChannelElement<Result>* get()
+    const gcl::detail::ChannelElement<Result>* get() const
     {
         if (!m_finished)
         {
             return nullptr;
         }
-        return reinterpret_cast<gcl::detail::ChannelElement<Result>*>(m_storage);
+        return reinterpret_cast<const gcl::detail::ChannelElement<Result>*>(m_storage);
     }
 
 private:
@@ -685,7 +685,7 @@ struct BaseTask<Result>::Impl : BaseImpl
         m_channel.reset();
     }
 
-    Channel<Result>* channel()
+    Channel<Result>* channel() const
     {
         return m_channel.get();
     }
