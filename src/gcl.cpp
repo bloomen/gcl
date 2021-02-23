@@ -32,11 +32,6 @@ public:
     LockFreeQueue(const LockFreeQueue&) = delete;
     LockFreeQueue& operator=(const LockFreeQueue&) = delete;
 
-    std::size_t size() const
-    {
-        return m_queue.size_approx();
-    }
-
     void push(ITask* const task)
     {
         m_queue.enqueue(task);
@@ -75,11 +70,6 @@ public:
     {
         m_done = true;
         m_thread.join();
-    }
-
-    std::size_t size() const
-    {
-        return m_scheduled.size();
     }
 
     void push(ITask* const task)
