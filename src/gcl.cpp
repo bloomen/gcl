@@ -218,7 +218,7 @@ private:
     CompletedQueue m_completed;
     std::vector<std::unique_ptr<Processor>> m_processors;
     std::thread m_thread;
-    std::mt19937 m_randgen;
+    std::mt19937_64 m_randgen;
 };
 
 Async::Async(const std::size_t n_threads, AsyncConfig config)
