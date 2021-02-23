@@ -165,9 +165,17 @@ struct Async::Impl
         }
         else
         {
-            std::uniform_int_distribution<std::size_t> dist{0u, m_processors.size() - 1u};
-            const auto index = dist(m_randgen);
-            m_processors[index]->push(&task);
+            if (task.get_thread_affinity() >= 0 && static_cast<std::size_t>(task.get_thread_affinity()) < m_processors.size())
+            {
+                const auto index = static_cast<std::size_t>(task.get_thread_affinity());
+                m_processors[index]->push(&task);
+            }
+            else
+            {
+                std::uniform_int_distribution<std::size_t> dist{0u, m_processors.size() - 1u};
+                const auto index = dist(m_randgen);
+                m_processors[index]->push(&task);
+            }
         }
     }
 
@@ -239,6 +247,11 @@ void Async::execute(ITask& task)
     m_impl->execute(task);
 }
 
+int detail::BaseImpl::get_thread_affinity() const
+{
+    return m_thread_affinity;
+}
+
 const std::vector<gcl::ITask*>& detail::BaseImpl::parents() const
 {
     return m_parents;
@@ -270,6 +283,11 @@ void detail::BaseImpl::auto_release()
 void detail::BaseImpl::set_finished()
 {
     m_finished = true;
+}
+
+void detail::BaseImpl::set_thread_affinity(const int affinity)
+{
+    m_thread_affinity = affinity;
 }
 
 void detail::BaseImpl::set_auto_release(const bool auto_release)

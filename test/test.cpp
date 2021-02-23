@@ -371,3 +371,24 @@ TEST_CASE("for_each_with_4_threads")
 {
     test_for_each(4);
 }
+
+TEST_CASE("schedule_with_thread_affinity")
+{
+    auto p1 = gcl::task([]{ return 42; });
+    p1.set_thread_affinity(0);
+    auto p2 = gcl::task([]{ return 13; });
+    p1.set_thread_affinity(1);
+    auto t = gcl::tie(p1, p2).then([](auto p1, auto p2){
+        REQUIRE(p1.has_result());
+        REQUIRE(p2.has_result());
+        return *p1.get() + *p2.get();
+    });
+    t.set_thread_affinity(2);
+    gcl::Async async{2};
+    REQUIRE(t.schedule(async));
+    REQUIRE(p1.valid());
+    REQUIRE(p2.valid());
+    REQUIRE(t.valid());
+    t.wait();
+    REQUIRE(55 == *t.get());
+}

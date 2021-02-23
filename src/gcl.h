@@ -33,6 +33,7 @@ class ITask
 public:
     virtual ~ITask() = default;
     virtual void call() = 0;
+    virtual int get_thread_affinity() const = 0;
     virtual const std::vector<ITask*>& parents() const = 0;
     virtual const std::vector<ITask*>& children() const = 0;
     virtual bool set_parent_finished() = 0;
@@ -107,6 +108,10 @@ public:
     // Creates a child to this task (continuation)
     template<typename Functor>
     auto then(Functor&& functor) &&;
+
+    // Specifies a particular thread the task should run on.
+    // If not specified then it'll run on a randomly selected thread.
+    void set_thread_affinity(std::size_t thread_index);
 
     // Schedules this task and its parents for execution. Returns true if successfully scheduled and false
     // if already scheduled and not finished. The result of this function call is valid == true.
@@ -303,6 +308,7 @@ class BaseImpl : public gcl::ITask
 public:
     virtual ~BaseImpl() = default;
 
+    int get_thread_affinity() const override;
     const std::vector<gcl::ITask*>& parents() const override;
     const std::vector<gcl::ITask*>& children() const override;
     bool set_parent_finished() override;
@@ -313,6 +319,7 @@ public:
     virtual void reset() = 0;
     virtual void release() = 0;
 
+    void set_thread_affinity(int affinity);
     void set_auto_release(bool auto_release);
 
     template<typename Visitor>
@@ -346,6 +353,7 @@ public:
 protected:
     BaseImpl() = default;
 
+    int m_thread_affinity = -1;
     std::atomic<bool> m_auto_release{false};
     std::atomic<bool> m_finished{false};
     std::vector<gcl::ITask*> m_parents;
@@ -677,6 +685,12 @@ struct BaseTask<Result>::Impl : BaseImpl
         m_channel.reset();
     }
 
+    Channel<Result>* channel()
+    {
+        return m_channel.get();
+    }
+
+private:
     std::unique_ptr<gcl::detail::Binding<Result>> m_binding;
     std::unique_ptr<Channel<Result>> m_channel;
 };
@@ -700,6 +714,12 @@ template<typename Functor, typename... Parents>
 void BaseTask<Result>::init(Functor&& functor, Parents&&... parents)
 {
     m_impl = std::make_shared<Impl>(std::forward<Functor>(functor), std::forward<Parents>(parents)...);
+}
+
+template<typename Result>
+void BaseTask<Result>::set_thread_affinity(const std::size_t thread_index)
+{
+    m_impl->set_thread_affinity(static_cast<int>(thread_index));
 }
 
 template<typename Result>
@@ -728,13 +748,13 @@ bool BaseTask<Result>::schedule(Exec& exec)
 template<typename Result>
 bool BaseTask<Result>::valid() const
 {
-    return m_impl->m_channel != nullptr;
+    return m_impl->channel() != nullptr;
 }
 
 template<typename Result>
 bool BaseTask<Result>::has_result() const
 {
-    return m_impl->m_channel && m_impl->m_channel->get();
+    return m_impl->channel() && m_impl->channel()->get();
 }
 
 template<typename Result>
@@ -787,9 +807,9 @@ std::vector<gcl::Edge> BaseTask<Result>::edges() const
 template<typename Result>
 const Result* Task<Result>::get() const
 {
-    if (this->m_impl->m_channel)
+    if (this->m_impl->channel())
     {
-        if (const auto element = this->m_impl->m_channel->get())
+        if (const auto element = this->m_impl->channel()->get())
         {
             if (element->has_value())
             {
@@ -807,9 +827,9 @@ const Result* Task<Result>::get() const
 template<typename Result>
 Result* Task<Result&>::get() const
 {
-    if (this->m_impl->m_channel)
+    if (this->m_impl->channel())
     {
-        if (const auto element = this->m_impl->m_channel->get())
+        if (const auto element = this->m_impl->channel()->get())
         {
             if (element->has_value())
             {
@@ -827,9 +847,9 @@ Result* Task<Result&>::get() const
 inline
 bool Task<void>::get() const
 {
-    if (this->m_impl->m_channel)
+    if (this->m_impl->channel())
     {
-        if (const auto element = this->m_impl->m_channel->get())
+        if (const auto element = this->m_impl->channel()->get())
         {
             if (!element->has_value())
             {
