@@ -127,8 +127,12 @@ struct Async::Impl
     Impl(const std::size_t n_threads, AsyncConfig config)
         : m_config{std::move(config)}
         , m_active{m_config.active}
-        , m_completed{m_config.initial_scheduler_queue_size}
+        , m_completed{n_threads > 0 ? m_config.initial_scheduler_queue_size : 0}
     {
+        if (n_threads > 0)
+        {
+            m_thread = std::thread{&Impl::worker, this};
+        }
         for (std::size_t i = 0; i < n_threads; ++i)
         {
             m_processors.emplace_front(i, m_config, m_active, m_completed);
@@ -137,8 +141,11 @@ struct Async::Impl
 
     ~Impl()
     {
-        m_done = true;
-        m_thread.join();
+        if (!m_processors.empty())
+        {
+            m_done = true;
+            m_thread.join();
+        }
     }
 
     void set_active(const bool active)
@@ -222,7 +229,7 @@ private:
     std::atomic<bool> m_active;
     CompletedQueue m_completed;
     std::forward_list<Processor> m_processors;
-    std::thread m_thread{&Impl::worker, this};
+    std::thread m_thread;
 };
 
 Async::Async(const std::size_t n_threads, AsyncConfig config)
