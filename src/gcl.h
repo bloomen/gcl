@@ -41,6 +41,8 @@ public:
     virtual bool set_child_finished() = 0;
     virtual void auto_release() = 0;
     virtual void set_finished() = 0;
+    virtual ITask*& next() = 0;
+    virtual ITask*& previous() = 0;
 };
 
 // Executor interface for running tasks
@@ -61,8 +63,6 @@ struct AsyncConfig
     bool scheduler_yields = true;
     std::chrono::microseconds inactive_processor_sleep_interval = std::chrono::microseconds{1000};
     std::chrono::microseconds inactive_scheduler_sleep_interval = std::chrono::microseconds{1000};
-    std::size_t initial_processor_queue_size = 8;
-    std::size_t initial_scheduler_queue_size = 32;
     std::function<void(std::size_t thread_index)> on_processor_thread_started;
     std::function<void()> on_scheduler_thread_started;
 };
@@ -316,6 +316,8 @@ public:
     bool set_child_finished() override;
     void auto_release() override;
     void set_finished() override;
+    gcl::ITask*& next() override;
+    gcl::ITask*& previous() override;
 
     virtual void reset() = 0;
     virtual void release() = 0;
@@ -361,6 +363,8 @@ protected:
     std::vector<gcl::ITask*> m_children;
     std::uint32_t m_parents_ready = 0;
     std::uint32_t m_children_ready = 0;
+    gcl::ITask* m_next = nullptr;
+    gcl::ITask* m_previous = nullptr;
 };
 
 struct CollectParents

@@ -5,11 +5,7 @@
 
 #include "gcl.h"
 
-#include <forward_list>
 #include <random>
-
-#include <concurrentqueue.h>
-#include <readerwriterqueue.h>
 
 namespace gcl
 {
@@ -17,39 +13,100 @@ namespace gcl
 namespace
 {
 
-template<typename QueueImpl>
-class LockFreeQueue
+class SpinLock
 {
 public:
 
-    LockFreeQueue() = default;
+    void lock() noexcept
+    {
+        while (m_locked.test_and_set(std::memory_order_acquire));
+    }
 
+    void unlock() noexcept
+    {
+        m_locked.clear(std::memory_order_release);
+    }
+
+private:
+    std::atomic_flag m_locked{ATOMIC_FLAG_INIT};
+};
+
+class LockGuard
+{
+public:
     explicit
-    LockFreeQueue(const std::size_t initial_size)
-        : m_queue{initial_size}
-    {}
+    LockGuard(SpinLock& spin)
+        : m_spin{spin}
+    {
+        m_spin.lock();
+    }
 
-    LockFreeQueue(const LockFreeQueue&) = delete;
-    LockFreeQueue& operator=(const LockFreeQueue&) = delete;
+    ~LockGuard() noexcept
+    {
+        m_spin.unlock();
+    }
+
+private:
+    SpinLock& m_spin;
+};
+
+// Does not use mutex. Does not heap-allocate
+class TaskQueue
+{
+public:
+
+    TaskQueue() = default;
+
+    TaskQueue(const TaskQueue&) = delete;
+    TaskQueue& operator=(const TaskQueue&) = delete;
 
     void push(ITask* const task)
     {
-        m_queue.enqueue(task);
+        GCL_ASSERT(!task->next());
+        GCL_ASSERT(!task->previous());
+        LockGuard lock{m_spin};
+        if (m_head)
+        {
+            m_tail->next() = task;
+            task->previous() = m_tail;
+            m_tail = task;
+        }
+        else
+        {
+            m_head = task;
+            m_tail = task;
+        }
     }
 
     ITask* pop()
     {
         ITask* task = nullptr;
-        m_queue.try_dequeue(task);
+        {
+            LockGuard lock{m_spin};
+            if (m_head)
+            {
+                task = m_head;
+                if (task->next())
+                {
+                    m_head = task->next();
+                    m_head->previous() = nullptr;
+                }
+                else
+                {
+                    m_head = nullptr;
+                    m_tail = nullptr;
+                }
+                task->next() = nullptr;
+            }
+        }
         return task;
     }
 
 private:
-    QueueImpl m_queue;
+    SpinLock m_spin;
+    ITask* m_head = nullptr;
+    ITask* m_tail = nullptr;
 };
-
-using CompletedQueue = LockFreeQueue<moodycamel::ConcurrentQueue<ITask*>>; // MpSc
-using ScheduledQueue = LockFreeQueue<moodycamel::ReaderWriterQueue<ITask*>>; // SpSc
 
 class Processor
 {
@@ -59,7 +116,7 @@ public:
     Processor(const std::size_t index,
               const AsyncConfig& config,
               const std::atomic<bool>& active,
-              CompletedQueue& completed)
+              TaskQueue& completed)
         : m_config{config}
         , m_active{active}
         , m_completed{completed}
@@ -104,9 +161,9 @@ private:
 
     const AsyncConfig& m_config;
     const std::atomic<bool>& m_active;
-    CompletedQueue& m_completed;
+    TaskQueue& m_completed;
     std::atomic<bool> m_done{false};
-    ScheduledQueue m_scheduled;
+    TaskQueue m_scheduled;
     std::thread m_thread;
 };
 
@@ -118,7 +175,6 @@ struct Async::Impl
     Impl(const std::size_t n_threads, AsyncConfig config)
         : m_config{std::move(config)}
         , m_active{m_config.active}
-        , m_completed{n_threads > 0 ? m_config.initial_scheduler_queue_size : 0}
         , m_randgen{config.scheduler_random_seed > 0 ? config.scheduler_random_seed : std::random_device{}()}
     {
         if (n_threads > 0)
@@ -215,7 +271,7 @@ private:
     AsyncConfig m_config;
     std::atomic<bool> m_done{false};
     std::atomic<bool> m_active;
-    CompletedQueue m_completed;
+    TaskQueue m_completed;
     std::vector<std::unique_ptr<Processor>> m_processors;
     std::thread m_thread;
     std::mt19937_64 m_randgen;
@@ -273,6 +329,16 @@ void detail::BaseImpl::auto_release()
 void detail::BaseImpl::set_finished()
 {
     m_finished = true;
+}
+
+ITask*& detail::BaseImpl::next()
+{
+    return m_next;
+}
+
+ITask*& detail::BaseImpl::previous()
+{
+    return m_previous;
 }
 
 void detail::BaseImpl::set_thread_affinity(const int affinity)
