@@ -6,6 +6,7 @@
 #include "gcl.h"
 
 #include <forward_list>
+#include <random>
 
 #include <concurrentqueue.h>
 #include <readerwriterqueue.h>
@@ -128,14 +129,16 @@ struct Async::Impl
         : m_config{std::move(config)}
         , m_active{m_config.active}
         , m_completed{n_threads > 0 ? m_config.initial_scheduler_queue_size : 0}
+        , m_randgen{config.scheduler_random_seed > 0 ? config.scheduler_random_seed : std::random_device{}()}
     {
         if (n_threads > 0)
         {
             m_thread = std::thread{&Impl::worker, this};
         }
+        m_processors.reserve(n_threads);
         for (std::size_t i = 0; i < n_threads; ++i)
         {
-            m_processors.emplace_front(i, m_config, m_active, m_completed);
+            m_processors.emplace_back(std::make_unique<Processor>(i, m_config, m_active, m_completed));
         }
     }
 
@@ -162,22 +165,9 @@ struct Async::Impl
         }
         else
         {
-            // find the "least busy" processor
-            auto proc = m_processors.begin();
-            auto processor = &*proc;
-            ++proc;
-            auto size = processor->size();
-            while (proc != m_processors.end())
-            {
-                const auto current_size = proc->size();
-                if (current_size < size)
-                {
-                    size = current_size;
-                    processor = &*proc;
-                }
-                ++proc;
-            }
-            processor->push(&task);
+            std::uniform_int_distribution<std::size_t> dist{0u, m_processors.size() - 1u};
+            const auto index = dist(m_randgen);
+            m_processors[index]->push(&task);
         }
     }
 
@@ -228,8 +218,9 @@ private:
     std::atomic<bool> m_done{false};
     std::atomic<bool> m_active;
     CompletedQueue m_completed;
-    std::forward_list<Processor> m_processors;
+    std::vector<std::unique_ptr<Processor>> m_processors;
     std::thread m_thread;
+    std::mt19937 m_randgen;
 };
 
 Async::Async(const std::size_t n_threads, AsyncConfig config)

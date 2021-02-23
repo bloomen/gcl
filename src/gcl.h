@@ -54,6 +54,7 @@ public:
 struct AsyncConfig
 {
     bool active = true;
+    std::size_t scheduler_random_seed = 0;
     bool processor_yields = true;
     bool scheduler_yields = true;
     std::chrono::microseconds inactive_processor_sleep_interval = std::chrono::microseconds{1000};
