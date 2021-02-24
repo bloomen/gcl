@@ -363,7 +363,7 @@ protected:
 
     int m_thread_affinity = -1;
     std::atomic<bool> m_auto_release{false};
-    std::atomic<bool> m_finished{false};
+    std::atomic<bool> m_has_result{false};
     std::atomic<bool> m_scheduled{false};
     std::vector<gcl::ITask*> m_parents;
     std::vector<gcl::ITask*> m_children;
@@ -559,8 +559,8 @@ class Channel
 {
 public:
     explicit
-    Channel(const std::atomic<bool>& finished)
-        : m_finished{finished}
+    Channel(const std::atomic<bool>& has_result)
+        : m_has_result{has_result}
     {}
 
     Channel(const Channel&) = delete;
@@ -575,7 +575,7 @@ public:
     // consumer
     const gcl::detail::ChannelElement<Result>* get() const
     {
-        if (!m_finished)
+        if (!m_has_result)
         {
             return nullptr;
         }
@@ -592,7 +592,7 @@ public:
     }
 
 private:
-    const std::atomic<bool>& m_finished;
+    const std::atomic<bool>& m_has_result;
     char m_storage[sizeof(gcl::detail::ChannelElement<Result>)];
 };
 
@@ -680,7 +680,7 @@ struct BaseTask<Result>::Impl : BaseImpl
 
     void prepare() override
     {
-        m_finished = false;
+        m_has_result = false;
         m_scheduled = true;
         m_parents_ready = 0;
         m_children_ready = 0;
@@ -694,7 +694,7 @@ struct BaseTask<Result>::Impl : BaseImpl
 
     void release() override
     {
-        m_finished = false;
+        m_has_result = false;
         m_channel.reset();
     }
 
@@ -705,7 +705,7 @@ struct BaseTask<Result>::Impl : BaseImpl
 
 private:
     std::unique_ptr<gcl::detail::Binding<Result>> m_binding;
-    Channel<Result> m_channel{m_finished};
+    Channel<Result> m_channel{m_has_result};
 };
 
 template<typename Result>

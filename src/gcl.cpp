@@ -328,7 +328,7 @@ void detail::BaseImpl::auto_release()
 
 void detail::BaseImpl::set_finished()
 {
-    m_finished = true;
+    m_has_result = true;
     m_scheduled = false;
 }
 
