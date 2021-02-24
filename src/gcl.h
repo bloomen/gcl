@@ -309,21 +309,67 @@ class BaseImpl : public gcl::ITask
 public:
     virtual ~BaseImpl() = default;
 
-    int get_thread_affinity() const override;
-    const std::vector<gcl::ITask*>& parents() const override;
-    const std::vector<gcl::ITask*>& children() const override;
-    bool set_parent_finished() override;
-    bool set_child_finished() override;
-    void auto_release() override;
-    void set_finished() override;
-    gcl::ITask*& next() override;
-    gcl::ITask*& previous() override;
+    int get_thread_affinity() const override
+    {
+        return m_thread_affinity;
+    }
+
+    const std::vector<gcl::ITask*>& parents() const override
+    {
+        return m_parents;
+    }
+
+    const std::vector<gcl::ITask*>& children() const override
+    {
+        return m_children;
+    }
+
+    bool set_parent_finished() override
+    {
+        return ++m_parents_ready == m_parents.size();
+    }
+
+    bool set_child_finished() override
+    {
+        return ++m_children_ready == m_children.size();
+    }
+
+    void auto_release() override
+    {
+        if (m_auto_release)
+        {
+            release();
+        }
+    }
+
+    void set_finished() override
+    {
+        m_has_result = true;
+        m_scheduled = false;
+    }
+
+    gcl::ITask*& next() override
+    {
+        return m_next;
+    }
+
+    gcl::ITask*& previous() override
+    {
+        return m_previous;
+    }
 
     virtual void prepare() = 0;
     virtual void release() = 0;
 
-    void set_thread_affinity(int affinity);
-    void set_auto_release(bool auto_release);
+    void set_thread_affinity(const int affinity)
+    {
+        m_thread_affinity = affinity;
+    }
+
+    void set_auto_release(const bool auto_release)
+    {
+        m_auto_release = auto_release;
+    }
 
     template<typename Visitor>
     void visit(const Visitor& visitor)
@@ -354,9 +400,29 @@ public:
         return m_scheduled;
     }
 
-    void add_parent(BaseImpl& impl);
-    gcl::TaskId id() const;
-    std::vector<gcl::Edge> edges();
+    void add_parent(BaseImpl& impl)
+    {
+        m_parents.emplace_back(&impl);
+        impl.m_children.emplace_back(this);
+    }
+
+    gcl::TaskId id() const
+    {
+        return std::hash<const BaseImpl*>{}(this);
+    }
+
+    std::vector<gcl::Edge> edges()
+    {
+        std::vector<Edge> es;
+        visit([&es](BaseImpl& i)
+        {
+            for (const auto p : i.m_parents)
+            {
+                es.push_back({static_cast<BaseImpl*>(p)->id(), i.id()});
+            }
+        });
+        return es;
+    }
 
 protected:
     BaseImpl() = default;
