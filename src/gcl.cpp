@@ -329,6 +329,7 @@ void detail::BaseImpl::auto_release()
 void detail::BaseImpl::set_finished()
 {
     m_finished = true;
+    m_scheduled = false;
 }
 
 ITask*& detail::BaseImpl::next()

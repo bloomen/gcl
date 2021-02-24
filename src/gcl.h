@@ -115,11 +115,11 @@ public:
     void set_thread_affinity(std::size_t thread_index);
 
     // Schedules this task and its parents for execution. Returns true if successfully scheduled and false
-    // if already scheduled and not finished. The result of this function call is valid == true.
+    // if already scheduled and not finished.
     bool schedule(gcl::Exec& e);
 
-    // Returns true if this task was scheduled at least once and not released
-    bool valid() const;
+    // Returns true of this task is currently being scheduled
+    bool is_scheduled() const;
 
     // Returns true if this task has a result
     bool has_result() const;
@@ -131,7 +131,7 @@ public:
     void set_auto_release(bool auto_release);
 
     // Releases this task's result and its parents' results. Returns true if successfully scheduled and false
-    // if already scheduled and not finished. The result of this function call is valid == false.
+    // if already scheduled and not finished.
     bool release();
 
     // Returns the id of the task (unique but changes between runs)
@@ -319,7 +319,7 @@ public:
     gcl::ITask*& next() override;
     gcl::ITask*& previous() override;
 
-    virtual void reset() = 0;
+    virtual void prepare() = 0;
     virtual void release() = 0;
 
     void set_thread_affinity(int affinity);
@@ -349,6 +349,11 @@ public:
         }
     }
 
+    bool is_scheduled() const
+    {
+        return m_scheduled;
+    }
+
     void add_parent(BaseImpl& impl);
     gcl::TaskId id() const;
     std::vector<gcl::Edge> edges();
@@ -359,6 +364,7 @@ protected:
     int m_thread_affinity = -1;
     std::atomic<bool> m_auto_release{false};
     std::atomic<bool> m_finished{false};
+    std::atomic<bool> m_scheduled{false};
     std::vector<gcl::ITask*> m_parents;
     std::vector<gcl::ITask*> m_children;
     std::uint32_t m_parents_ready = 0;
@@ -560,14 +566,6 @@ public:
     Channel(const Channel&) = delete;
     Channel& operator=(const Channel&) = delete;
 
-    ~Channel()
-    {
-        if (const auto element = get())
-        {
-            element->~ChannelElement();
-        }
-    }
-
     // producer
     void set(gcl::detail::ChannelElement<Result>&& element)
     {
@@ -582,6 +580,15 @@ public:
             return nullptr;
         }
         return reinterpret_cast<const gcl::detail::ChannelElement<Result>*>(m_storage);
+    }
+
+    // consumer
+    void reset()
+    {
+        if (const auto element = get())
+        {
+            element->~ChannelElement();
+        }
     }
 
 private:
@@ -671,33 +678,34 @@ struct BaseTask<Result>::Impl : BaseImpl
         m_binding = std::make_unique<gcl::detail::BindingImpl<Result, Functor, Parents...>>(std::forward<Functor>(functor), std::forward<Parents>(parents)...);
     }
 
-    void reset() override
+    void prepare() override
     {
         m_finished = false;
+        m_scheduled = true;
         m_parents_ready = 0;
         m_children_ready = 0;
         m_channel.reset();
-        m_channel = std::make_unique<Channel<Result>>(m_finished);
     }
 
     void call() override
     {
-        gcl::detail::Evaluate<Result>{}(*m_channel, *m_binding);
+        gcl::detail::Evaluate<Result>{}(m_channel, *m_binding);
     }
 
     void release() override
     {
+        m_finished = false;
         m_channel.reset();
     }
 
-    Channel<Result>* channel() const
+    const ChannelElement<Result>* channel_element() const
     {
         return m_channel.get();
     }
 
 private:
     std::unique_ptr<gcl::detail::Binding<Result>> m_binding;
-    std::unique_ptr<Channel<Result>> m_channel;
+    Channel<Result> m_channel{m_finished};
 };
 
 template<typename Result>
@@ -730,14 +738,14 @@ void BaseTask<Result>::set_thread_affinity(const std::size_t thread_index)
 template<typename Result>
 bool BaseTask<Result>::schedule(Exec& exec)
 {
-    if (valid() && !has_result())
+    if (is_scheduled())
     {
         return false;
     }
     std::vector<gcl::ITask*> roots;
     m_impl->visit([&roots](BaseImpl& i)
     {
-        i.reset();
+        i.prepare();
         if (i.parents().empty())
         {
             roots.emplace_back(&i);
@@ -751,15 +759,15 @@ bool BaseTask<Result>::schedule(Exec& exec)
 }
 
 template<typename Result>
-bool BaseTask<Result>::valid() const
+bool BaseTask<Result>::is_scheduled() const
 {
-    return m_impl->channel() != nullptr;
+    return m_impl->is_scheduled();
 }
 
 template<typename Result>
 bool BaseTask<Result>::has_result() const
 {
-    return m_impl->channel() && m_impl->channel()->get();
+    return m_impl->channel_element();
 }
 
 template<typename Result>
@@ -787,7 +795,7 @@ void BaseTask<Result>::set_auto_release(const bool auto_release)
 template<typename Result>
 bool BaseTask<Result>::release()
 {
-    if (valid() && !has_result())
+    if (is_scheduled())
     {
         return false;
     }
@@ -812,18 +820,15 @@ std::vector<gcl::Edge> BaseTask<Result>::edges() const
 template<typename Result>
 const Result* Task<Result>::get() const
 {
-    if (this->m_impl->channel())
+    if (const auto element = this->m_impl->channel_element())
     {
-        if (const auto element = this->m_impl->channel()->get())
+        if (element->has_value())
         {
-            if (element->has_value())
-            {
-                return element->value();
-            }
-            else
-            {
-                std::rethrow_exception(element->exception());
-            }
+            return element->value();
+        }
+        else
+        {
+            std::rethrow_exception(element->exception());
         }
     }
     return nullptr;
@@ -832,18 +837,15 @@ const Result* Task<Result>::get() const
 template<typename Result>
 Result* Task<Result&>::get() const
 {
-    if (this->m_impl->channel())
+    if (const auto element = this->m_impl->channel_element())
     {
-        if (const auto element = this->m_impl->channel()->get())
+        if (element->has_value())
         {
-            if (element->has_value())
-            {
-                return element->value();
-            }
-            else
-            {
-                std::rethrow_exception(element->exception());
-            }
+            return element->value();
+        }
+        else
+        {
+            std::rethrow_exception(element->exception());
         }
     }
     return nullptr;
@@ -852,16 +854,13 @@ Result* Task<Result&>::get() const
 inline
 bool Task<void>::get() const
 {
-    if (this->m_impl->channel())
+    if (const auto element = this->m_impl->channel_element())
     {
-        if (const auto element = this->m_impl->channel()->get())
+        if (!element->has_value())
         {
-            if (!element->has_value())
-            {
-                std::rethrow_exception(element->exception());
-            }
-            return true;
+            std::rethrow_exception(element->exception());
         }
+        return true;
     }
     return false;
 }

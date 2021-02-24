@@ -25,9 +25,6 @@ void test_schedule(const std::size_t n_threads)
     });
     gcl::Async async{n_threads};
     REQUIRE(t.schedule(async));
-    REQUIRE(p1.valid());
-    REQUIRE(p2.valid());
-    REQUIRE(t.valid());
     t.wait();
     REQUIRE(55 == *t.get());
 }
@@ -92,9 +89,9 @@ void test_schedule_and_auto_release(const std::size_t n_threads)
     gcl::Async async{n_threads};
     REQUIRE(t.schedule(async));
     t.wait();
-    REQUIRE(!p1.valid());
-    REQUIRE(!p2.valid());
-    REQUIRE(t.valid());
+    REQUIRE(!p1.has_result());
+    REQUIRE(!p2.has_result());
+    REQUIRE(t.has_result());
     REQUIRE(55 == *t.get());
 }
 
@@ -138,13 +135,13 @@ TEST_CASE("schedule_using_reference_type")
 TEST_CASE("schedule_and_release")
 {
     auto t = gcl::task([]{ return 42; });
-    REQUIRE(!t.valid());
+    REQUIRE(!t.has_result());
     gcl::Async async;
     REQUIRE(t.schedule(async));
-    REQUIRE(t.valid());
+    REQUIRE(t.has_result());
     REQUIRE(42 == *t.get());
     REQUIRE(t.release());
-    REQUIRE(!t.valid());
+    REQUIRE(!t.has_result());
 }
 
 void test_schedule_a_wide_graph(const std::size_t n_threads)
@@ -396,9 +393,6 @@ TEST_CASE("schedule_with_thread_affinity")
     t.set_thread_affinity(2);
     gcl::Async async{2};
     REQUIRE(t.schedule(async));
-    REQUIRE(p1.valid());
-    REQUIRE(p2.valid());
-    REQUIRE(t.valid());
     t.wait();
     REQUIRE(55 == *t.get());
 }
