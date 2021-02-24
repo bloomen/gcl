@@ -50,6 +50,7 @@ class Exec
 {
 public:
     virtual ~Exec() = default;
+    virtual std::size_t n_threads() const = 0;
     virtual void set_active(bool active) = 0;
     virtual void execute(ITask& task) = 0;
 };
@@ -75,6 +76,7 @@ public:
     Async(std::size_t n_threads = 0, gcl::AsyncConfig config = {});
     ~Async();
 
+    std::size_t n_threads() const override;
     void set_active(bool active) override;
     void execute(ITask& task) override;
 private:
@@ -808,18 +810,50 @@ bool BaseTask<Result>::schedule(Exec& exec)
     {
         return false;
     }
-    std::vector<gcl::ITask*> roots;
-    m_impl->visit([&roots](BaseImpl& i)
+    if (exec.n_threads() > 0)
     {
-        i.prepare();
-        if (i.parents().empty())
+        std::vector<gcl::ITask*> roots;
+        m_impl->visit([&roots](BaseImpl& i)
         {
-            roots.emplace_back(&i);
+            i.prepare();
+            if (i.parents().empty())
+            {
+                roots.emplace_back(&i);
+            }
+        });
+        for (const auto root : roots)
+        {
+            exec.execute(*root);
         }
-    });
-    for (const auto root : roots)
+    }
+    else
     {
-        exec.execute(*root);
+        gcl::ITask* task = nullptr;
+        m_impl->visit([&task](BaseImpl& i)
+        {
+            i.prepare();
+            i.previous() = task;
+            if (task)
+            {
+                task->next() = &i;
+            }
+            task = &i;
+        });
+
+        do
+        {
+            task->call();
+            // todo: move this bit into its own function
+            for (const auto parent : task->parents())
+            {
+                if (parent->set_child_finished())
+                {
+                    parent->auto_release();
+                }
+            }
+            task->set_finished();
+        }
+        while (task = task->previous());
     }
     return true;
 }

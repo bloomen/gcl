@@ -197,6 +197,11 @@ struct Async::Impl
         }
     }
 
+    std::size_t n_threads() const
+    {
+        return m_processors.size();
+    }
+
     void set_active(const bool active)
     {
         m_active = active;
@@ -204,24 +209,17 @@ struct Async::Impl
 
     void execute(ITask& task)
     {
-        if (m_processors.empty())
+        GCL_ASSERT(!m_processors.empty());
+        if (task.get_thread_affinity() >= 0 && static_cast<std::size_t>(task.get_thread_affinity()) < m_processors.size())
         {
-            task.call();
-            on_completed(task);
+            const auto index = static_cast<std::size_t>(task.get_thread_affinity());
+            m_processors[index]->push(&task);
         }
         else
         {
-            if (task.get_thread_affinity() >= 0 && static_cast<std::size_t>(task.get_thread_affinity()) < m_processors.size())
-            {
-                const auto index = static_cast<std::size_t>(task.get_thread_affinity());
-                m_processors[index]->push(&task);
-            }
-            else
-            {
-                std::uniform_int_distribution<std::size_t> dist{0u, m_processors.size() - 1u};
-                const auto index = dist(m_randgen);
-                m_processors[index]->push(&task);
-            }
+            std::uniform_int_distribution<std::size_t> dist{0u, m_processors.size() - 1u};
+            const auto index = dist(m_randgen);
+            m_processors[index]->push(&task);
         }
     }
 
@@ -282,6 +280,11 @@ Async::Async(const std::size_t n_threads, AsyncConfig config)
 {}
 
 Async::~Async() = default;
+
+std::size_t Async::n_threads() const
+{
+    return m_impl->n_threads();
+}
 
 void Async::set_active(bool active)
 {
