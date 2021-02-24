@@ -210,17 +210,17 @@ struct Async::Impl
     void execute(ITask& task)
     {
         GCL_ASSERT(!m_processors.empty());
+        std::size_t index;
         if (task.get_thread_affinity() >= 0 && static_cast<std::size_t>(task.get_thread_affinity()) < m_processors.size())
         {
-            const auto index = static_cast<std::size_t>(task.get_thread_affinity());
-            m_processors[index]->push(&task);
+            index = static_cast<std::size_t>(task.get_thread_affinity());
         }
         else
         {
             std::uniform_int_distribution<std::size_t> dist{0u, m_processors.size() - 1u};
-            const auto index = dist(m_randgen);
-            m_processors[index]->push(&task);
+            index = dist(m_randgen);
         }
+        m_processors[index]->push(&task);
     }
 
 private:
