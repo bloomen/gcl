@@ -372,6 +372,16 @@ TEST_CASE("for_each_with_4_threads")
     test_for_each(4);
 }
 
+TEST_CASE("for_each_with_counters")
+{
+    std::vector<double> data{1, 2, 3, 4, 5};
+    auto t = gcl::for_each(size_t{0}, data.size(), [&data](auto i){ data[i] *= 2; });
+    gcl::Async async;
+    REQUIRE(t.schedule(async));
+    const std::vector<double> data_exp{2, 4, 6, 8, 10};
+    REQUIRE(data_exp == data);
+}
+
 TEST_CASE("schedule_with_thread_affinity")
 {
     auto p1 = gcl::task([]{ return 42; });

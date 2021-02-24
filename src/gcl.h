@@ -959,14 +959,43 @@ private:
     std::atomic<bool> m_token{false};
 };
 
+namespace detail
+{
+
+template<bool is_arithmetic>
+struct Distance;
+
+template<>
+struct Distance<true>
+{
+    template<typename Number>
+    auto operator()(const Number first, const Number last) const
+    {
+        GCL_ASSERT(last > first);
+        return last - first;
+    }
+};
+
+template<>
+struct Distance<false>
+{
+    template<typename Iterator>
+    auto operator()(const Iterator first, const Iterator last) const
+    {
+        return std::distance(first, last);
+    }
+};
+
+}
+
 // A function similar to std::for_each but returning a task for deferred,
 // possibly asynchronous execution. This function creates a graph
 // with std::distance(first, last) + 1 tasks. UB if first >= last.
 // Note that `unary_op` takes an iterator.
-template<typename InputIt, typename UnaryOperation>
-gcl::Task<void> for_each(InputIt first, InputIt last, UnaryOperation unary_op)
+template<typename T, typename UnaryOperation>
+gcl::Task<void> for_each(T first, const T last, UnaryOperation unary_op)
 {
-    const auto distance = std::distance(first, last);
+    const auto distance = gcl::detail::Distance<std::is_arithmetic<T>::value>{}(first, last);
     GCL_ASSERT(distance > 0);
     gcl::Vec<void> tasks;
     tasks.reserve(static_cast<std::size_t>(distance));
