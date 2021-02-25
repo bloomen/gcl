@@ -239,29 +239,17 @@ private:
         {
             while (const auto task = m_completed.pop())
             {
-                on_completed(*task);
+                task->set_finished();
+                for (const auto child : task->children())
+                {
+                    if (child->set_parent_finished())
+                    {
+                        execute(*child);
+                    }
+                }
             }
             m_sleep_interrupted = false;
             sleep_for(m_done, m_sleep_interrupted, m_config.scheduler_sleep_interval);
-        }
-    }
-
-    void on_completed(ITask& task)
-    {
-        for (const auto parent : task.parents())
-        {
-            if (parent->set_child_finished())
-            {
-                parent->auto_release();
-            }
-        }
-        task.set_finished();
-        for (const auto child : task.children())
-        {
-            if (child->set_parent_finished())
-            {
-                execute(*child);
-            }
         }
     }
 

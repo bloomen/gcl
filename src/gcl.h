@@ -35,11 +35,8 @@ public:
     virtual ~ITask() = default;
     virtual void call() = 0;
     virtual int get_thread_affinity() const = 0;
-    virtual const std::vector<ITask*>& parents() const = 0;
     virtual const std::vector<ITask*>& children() const = 0;
     virtual bool set_parent_finished() = 0;
-    virtual bool set_child_finished() = 0;
-    virtual void auto_release() = 0;
     virtual void set_finished() = 0;
     virtual ITask*& next() = 0;
     virtual ITask*& previous() = 0;
@@ -311,11 +308,6 @@ public:
         return m_thread_affinity;
     }
 
-    const std::vector<gcl::ITask*>& parents() const override
-    {
-        return m_parents;
-    }
-
     const std::vector<gcl::ITask*>& children() const override
     {
         return m_children;
@@ -326,21 +318,15 @@ public:
         return ++m_parents_ready == m_parents.size();
     }
 
-    bool set_child_finished() override
-    {
-        return ++m_children_ready == m_children.size();
-    }
-
-    void auto_release() override
-    {
-        if (m_auto_release)
-        {
-            release();
-        }
-    }
-
     void set_finished() override
     {
+        for (const auto parent : parents())
+        {
+            if (parent->set_child_finished())
+            {
+                parent->auto_release();
+            }
+        }
         m_has_result = true;
         m_scheduled = false;
     }
@@ -403,6 +389,24 @@ public:
         impl.m_children.emplace_back(this);
     }
 
+    const std::vector<BaseImpl*>& parents() const
+    {
+        return m_parents;
+    }
+
+    bool set_child_finished()
+    {
+        return ++m_children_ready == m_children.size();
+    }
+
+    void auto_release()
+    {
+        if (m_auto_release)
+        {
+            release();
+        }
+    }
+
     gcl::TaskId id() const
     {
         return std::hash<const BaseImpl*>{}(this);
@@ -415,7 +419,7 @@ public:
         {
             for (const auto p : i.m_parents)
             {
-                es.push_back({static_cast<BaseImpl*>(p)->id(), i.id()});
+                es.push_back({p->id(), i.id()});
             }
         });
         return es;
@@ -428,7 +432,7 @@ protected:
     std::atomic<bool> m_auto_release{false};
     std::atomic<bool> m_has_result{false};
     std::atomic<bool> m_scheduled{false};
-    std::vector<gcl::ITask*> m_parents;
+    std::vector<BaseImpl*> m_parents;
     std::vector<gcl::ITask*> m_children;
     std::uint32_t m_parents_ready = 0;
     std::uint32_t m_children_ready = 0;
@@ -838,22 +842,21 @@ bool BaseTask<Result>::schedule(Exec& exec)
         do
         {
             task->call();
-            // todo: move this bit into its own function
-            for (const auto parent : task->parents())
-            {
-                if (parent->set_child_finished())
-                {
-                    parent->auto_release();
-                }
-            }
             task->set_finished();
+            const auto previous = task->previous();
+            if (previous)
+            {
+                previous->next() = nullptr;
+                task->previous() = nullptr;
+            }
+            task = previous;
         }
-        while (task = task->previous());
+        while (task);
     }
     return true;
 }
 
-template<typename Result>
+template<typename Result> 
 bool BaseTask<Result>::is_scheduled() const
 {
     return m_impl->is_scheduled();
