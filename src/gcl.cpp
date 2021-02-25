@@ -13,6 +13,18 @@ namespace gcl
 namespace
 {
 
+void sleep_for(std::atomic<bool>& done, std::atomic<bool>& interrupted, const std::chrono::microseconds interval)
+{
+    if (interval <= std::chrono::microseconds{0})
+    {
+        return;
+    }
+    while (!interrupted && !done)
+    {
+        std::this_thread::sleep_for(interval);
+    }
+}
+
 class SpinLock
 {
 public:
@@ -115,11 +127,11 @@ public:
     explicit 
     Processor(const std::size_t index,
               const AsyncConfig& config,
-              const std::atomic<bool>& active,
-              TaskQueue& completed)
+              TaskQueue& completed,
+              std::atomic<bool>& one_completed)
         : m_config{config}
-        , m_active{active}
         , m_completed{completed}
+        , m_one_completed{one_completed}
         , m_thread{&Processor::worker, this, index}
     {}
 
@@ -131,7 +143,9 @@ public:
 
     void push(ITask* const task)
     {
+        m_sleep_interrupted = true;
         m_scheduled.push(task);
+        m_sleep_interrupted = true;
     }
 
 private:
@@ -146,22 +160,19 @@ private:
             while (const auto task = m_scheduled.pop())
             {
                 task->call();
+                m_one_completed = true;
                 m_completed.push(task);
+                m_one_completed = true;
             }
-            if (m_config.processor_yields)
-            {
-                std::this_thread::yield();
-            }
-            if (m_config.inactive_processor_sleep_interval > std::chrono::microseconds{0} && !m_active)
-            {
-                std::this_thread::sleep_for(m_config.inactive_processor_sleep_interval);
-            }
+            m_sleep_interrupted = false;
+            sleep_for(m_done, m_sleep_interrupted, m_config.processor_sleep_interval);
         }
     }
 
     const AsyncConfig& m_config;
-    const std::atomic<bool>& m_active;
     TaskQueue& m_completed;
+    std::atomic<bool>& m_one_completed;
+    std::atomic<bool> m_sleep_interrupted{false};
     std::atomic<bool> m_done{false};
     TaskQueue m_scheduled;
     std::thread m_thread;
@@ -174,7 +185,6 @@ struct Async::Impl
     explicit
     Impl(const std::size_t n_threads, AsyncConfig config)
         : m_config{std::move(config)}
-        , m_active{m_config.active}
         , m_randgen{config.scheduler_random_seed > 0 ? config.scheduler_random_seed : std::random_device{}()}
     {
         if (n_threads > 0)
@@ -184,7 +194,7 @@ struct Async::Impl
         m_processors.reserve(n_threads);
         for (std::size_t i = 0; i < n_threads; ++i)
         {
-            m_processors.emplace_back(std::make_unique<Processor>(i, m_config, m_active, m_completed));
+            m_processors.emplace_back(std::make_unique<Processor>(i, m_config, m_completed, m_sleep_interrupted));
         }
     }
 
@@ -200,11 +210,6 @@ struct Async::Impl
     std::size_t n_threads() const
     {
         return m_processors.size();
-    }
-
-    void set_active(const bool active)
-    {
-        m_active = active;
     }
 
     void execute(ITask& task)
@@ -236,14 +241,8 @@ private:
             {
                 on_completed(*task);
             }
-            if (m_config.scheduler_yields)
-            {
-                std::this_thread::yield();
-            }
-            if (m_config.inactive_scheduler_sleep_interval > std::chrono::microseconds{0} && !m_active)
-            {
-                std::this_thread::sleep_for(m_config.inactive_scheduler_sleep_interval);
-            }
+            m_sleep_interrupted = false;
+            sleep_for(m_done, m_sleep_interrupted, m_config.scheduler_sleep_interval);
         }
     }
 
@@ -267,8 +266,8 @@ private:
     }
 
     AsyncConfig m_config;
+    std::atomic<bool> m_sleep_interrupted{false};
     std::atomic<bool> m_done{false};
-    std::atomic<bool> m_active;
     TaskQueue m_completed;
     std::vector<std::unique_ptr<Processor>> m_processors;
     std::thread m_thread;
@@ -284,11 +283,6 @@ Async::~Async() = default;
 std::size_t Async::n_threads() const
 {
     return m_impl->n_threads();
-}
-
-void Async::set_active(bool active)
-{
-    m_impl->set_active(active);
 }
 
 void Async::execute(ITask& task)
