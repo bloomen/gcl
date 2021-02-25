@@ -74,8 +74,6 @@ public:
 
     void push(ITask* const task)
     {
-        GCL_ASSERT(!task->next());
-        GCL_ASSERT(!task->previous());
         LockGuard lock{m_spin};
         if (m_head)
         {
