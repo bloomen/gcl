@@ -5,6 +5,8 @@
 
 #include "gcl.h"
 
+#include <condition_variable>
+#include <mutex>
 #include <random>
 
 namespace gcl
@@ -50,44 +52,113 @@ private:
     SpinLock& m_spin;
 };
 
-// Does not use mutex. Does not heap-allocate
+class ConditionVariable
+{
+public:
+
+    template<typename Pred, typename Functor>
+    auto wait(Pred&& pred, Functor&& functor)
+    {
+        std::unique_lock<std::mutex> lock{m_mutex};
+        m_cv.wait(lock, std::forward<Pred>(pred));
+        return std::forward<Functor>(functor)();
+    }
+
+    template<typename Functor>
+    void notify(Functor&& functor)
+    {
+        std::lock_guard<std::mutex> lock{m_mutex};
+        std::forward<Functor>(functor)();
+        m_cv.notify_one();
+    }
+
+    template<typename Functor>
+    auto protect(Functor&& functor) const
+    {
+        std::lock_guard<std::mutex> lock{m_mutex};
+        return std::forward<Functor>(functor)();
+    }
+
+private:
+    mutable std::mutex m_mutex;
+    std::condition_variable m_cv;
+};
+
+// Only used as single-consumer
 class TaskQueue
 {
 public:
 
-    TaskQueue() = default;
+    explicit
+    TaskQueue(const std::atomic<bool>& done, const bool use_condition_variable)
+        : m_done{done}
+    {
+        if (use_condition_variable)
+        {
+            m_cv = std::make_unique<ConditionVariable>();
+        }
+    }
 
     TaskQueue(const TaskQueue&) = delete;
     TaskQueue& operator=(const TaskQueue&) = delete;
 
-    std::size_t size() const
+    void shutdown()
     {
-        LockGuard lock{m_spin};
-        return m_size;
+        if (m_cv)
+        {
+            m_cv->notify([]{});
+        }
     }
 
-    void push(ITask* const task)
+    std::size_t size() const
     {
-        LockGuard lock{m_spin};
-        if (m_head)
+        if (m_cv)
         {
-            m_tail->next() = task;
-            task->previous() = m_tail;
-            m_tail = task;
+            return m_cv->protect([this]{ return m_size; });
         }
         else
         {
-            m_head = task;
-            m_tail = task;
+            LockGuard lock{m_spin};
+            return m_size;
         }
-        ++m_size;
     }
 
-    ITask* pop()
+    // multiple producer
+    void push(ITask* const task)
     {
-        ITask* task = nullptr;
+        auto push_task = [this, task]
+        {
+            if (m_head)
+            {
+                m_tail->next() = task;
+                task->previous() = m_tail;
+                m_tail = task;
+            }
+            else
+            {
+                m_head = task;
+                m_tail = task;
+            }
+            ++m_size;
+        };
+
+        if (m_cv)
+        {
+            m_cv->notify(push_task);
+        }
+        else
         {
             LockGuard lock{m_spin};
+            push_task();
+        }
+    }
+
+    // single consumer
+    ITask* pop()
+    {
+        auto pop_task = [this]
+        {
+            ITask* task = nullptr;
             if (m_head)
             {
                 task = m_head;
@@ -104,11 +175,23 @@ public:
                 task->next() = nullptr;
                 --m_size;
             }
+            return task;
+        };
+
+        if (m_cv)
+        {
+            return m_cv->wait([this]{ return m_size > 0 || m_done; }, pop_task);
         }
-        return task;
+        else
+        {
+            LockGuard lock{m_spin};
+            return pop_task();
+        }
     }
 
 private:
+    const std::atomic<bool>& m_done;
+    std::unique_ptr<ConditionVariable> m_cv;
     mutable SpinLock m_spin;
     ITask* m_head = nullptr;
     ITask* m_tail = nullptr;
@@ -139,12 +222,14 @@ public:
         : m_config{config}
         , m_completed{completed}
         , m_active{active}
+        , m_scheduled{m_done, m_config.use_condition_variable}
         , m_thread{&Processor::worker, this, index}
     {}
 
     ~Processor()
     {
         m_done = true;
+        m_scheduled.shutdown();
         m_thread.join();
     }
 
@@ -167,7 +252,10 @@ private:
                 task->call();
                 m_completed.push(task);
             }
-            sleep_for(m_scheduled, m_active, m_config.processor_sleep_interval);
+            if (!m_config.use_condition_variable)
+            {
+                sleep_for(m_scheduled, m_active, m_config.processor_sleep_interval);
+            }
         }
     }
 
@@ -186,7 +274,8 @@ struct Async::Impl
     explicit
     Impl(const std::size_t n_threads, AsyncConfig config)
         : m_config{std::move(config)}
-        , m_active{std::move(m_config.active)}
+        , m_active{m_config.active}
+        , m_completed{m_done, m_config.use_condition_variable}
         , m_randgen{m_config.scheduler_random_seed > 0 ? m_config.scheduler_random_seed : std::random_device{}()}
     {
         if (n_threads == 0)
@@ -209,6 +298,7 @@ struct Async::Impl
         }
         m_active = true;
         m_done = true;
+        m_completed.shutdown();
         m_thread.join();
     }
 
@@ -258,7 +348,10 @@ private:
                     }
                 }
             }
-            sleep_for(m_completed, m_active, m_config.scheduler_sleep_interval);
+            if (!m_config.use_condition_variable)
+            {
+                sleep_for(m_completed, m_active, m_config.scheduler_sleep_interval);
+            }
         }
     }
 

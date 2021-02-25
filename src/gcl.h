@@ -55,12 +55,15 @@ public:
 // Config struct for the Async class
 struct AsyncConfig
 {
-    bool active = false;
-    std::uint_fast64_t scheduler_random_seed = 0;
-    std::chrono::microseconds processor_sleep_interval = std::chrono::microseconds{100};
-    std::chrono::microseconds scheduler_sleep_interval = std::chrono::microseconds{100};
+    std::uint_fast64_t scheduler_random_seed = 0; // to select a random processor for a new task to run
     std::function<void(std::size_t thread_index)> on_processor_thread_started;
     std::function<void()> on_scheduler_thread_started;
+    bool use_condition_variable = true; // implies use of std::mutex
+
+    // below are only used when use_condition_variable == false
+    bool active = false; // whether we're in active mode which skips all sleeping
+    std::chrono::microseconds processor_sleep_interval = std::chrono::microseconds{100};
+    std::chrono::microseconds scheduler_sleep_interval = std::chrono::microseconds{100};
 };
 
 // Async executor for asynchronous execution
@@ -71,7 +74,7 @@ public:
     Async(std::size_t n_threads = 0, gcl::AsyncConfig config = {});
     ~Async();
 
-    void set_active(bool active) override;
+    void set_active(bool active) override; // only relevant for use_condition_variable == false
     std::size_t n_threads() const override;
     void execute(ITask& task) override;
 private:
