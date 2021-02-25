@@ -363,24 +363,36 @@ public:
     template<typename Visitor>
     void visit(const Visitor& visitor)
     {
-        std::unordered_set<BaseImpl*> visited{this};
-        visitor(*this);
-        std::queue<BaseImpl*> q;
-        q.emplace(this);
-        while (!q.empty())
+        if (!m_task_cache)
         {
-            const BaseImpl* const v = q.front();
-            q.pop();
-            for (gcl::ITask* const p : v->m_parents)
+            m_task_cache = std::make_unique<std::vector<BaseImpl*>>();
+            m_task_cache->reserve(16);
+            m_task_cache->emplace_back(this);
+            std::queue<BaseImpl*> q;
+            q.emplace(this);
+            while (!q.empty())
             {
-                const auto w = static_cast<BaseImpl*>(p);
-                if (visited.find(w) == visited.end())
+                const BaseImpl* const v = q.front();
+                q.pop();
+                for (gcl::ITask* const p : v->m_parents)
                 {
-                    q.emplace(w);
-                    visited.insert(w);
-                    visitor(*w);
+                    const auto w = static_cast<BaseImpl*>(p);
+                    if (!w->m_visited)
+                    {
+                        q.emplace(w);
+                        w->m_visited = true;
+                        m_task_cache->emplace_back(w);
+                    }
                 }
             }
+            for (const auto task : *m_task_cache)
+            {
+                task->m_visited = false;
+            }
+        }
+        for (auto task = m_task_cache->rbegin(); task != m_task_cache->rend(); ++task)
+        {
+            visitor(**task);
         }
     }
 
@@ -389,10 +401,16 @@ public:
         return m_scheduled;
     }
 
-    void add_parent(BaseImpl& impl)
+    void add_child(BaseImpl& child)
     {
-        m_parents.emplace_back(&impl);
-        impl.m_children.emplace_back(this);
+        m_children.emplace_back(&child);
+        m_task_cache.reset();
+    }
+
+    void add_parent(BaseImpl& parent)
+    {
+        m_parents.emplace_back(&parent);
+        parent.add_child(*this);
     }
 
     const std::vector<BaseImpl*>& parents() const
@@ -438,6 +456,8 @@ protected:
     std::atomic<bool> m_auto_release{false};
     std::atomic<bool> m_has_result{false};
     std::atomic<bool> m_scheduled{false};
+    bool m_visited = false;
+    std::unique_ptr<std::vector<BaseImpl*>> m_task_cache;
     std::vector<BaseImpl*> m_parents;
     std::vector<gcl::ITask*> m_children;
     std::uint32_t m_parents_ready = 0;
@@ -842,31 +862,12 @@ bool BaseTask<Result>::schedule()
     {
         return false;
     }
-    gcl::ITask* task = nullptr;
-    m_impl->visit([&task](BaseImpl& i)
+    m_impl->visit([](BaseImpl& i)
     {
         i.prepare();
-        i.previous() = task;
-        if (task)
-        {
-            task->next() = &i;
-        }
-        task = &i;
+        i.call();
+        i.set_finished();
     });
-
-    do
-    {
-        task->call();
-        task->set_finished();
-        const auto previous = task->previous();
-        if (previous)
-        {
-            previous->next() = nullptr;
-            task->previous() = nullptr;
-        }
-        task = previous;
-    }
-    while (task);
     return true;
 }
 
