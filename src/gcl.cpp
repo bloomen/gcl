@@ -189,10 +189,11 @@ struct Async::Impl
         , m_active{std::move(m_config.active)}
         , m_randgen{m_config.scheduler_random_seed > 0 ? m_config.scheduler_random_seed : std::random_device{}()}
     {
-        if (n_threads > 0)
+        if (n_threads == 0)
         {
-            m_thread = std::thread{&Impl::worker, this};
+            return;
         }
+        m_thread = std::thread{&Impl::worker, this};
         m_processors.reserve(n_threads);
         for (std::size_t i = 0; i < n_threads; ++i)
         {
@@ -202,12 +203,13 @@ struct Async::Impl
 
     ~Impl()
     {
-        if (n_threads() > 0)
+        if (n_threads() == 0)
         {
-            m_active = true;
-            m_done = true;
-            m_thread.join();
+            return;
         }
+        m_active = true;
+        m_done = true;
+        m_thread.join();
     }
 
     void set_active(const bool active)
