@@ -115,6 +115,9 @@ public:
     // if already scheduled and not finished.
     bool schedule(gcl::Exec& e);
 
+    // Runs tasks synchronously on the current thread
+    bool schedule();
+
     // Returns true of this task is currently being scheduled
     bool is_scheduled() const;
 
@@ -812,50 +815,58 @@ bool BaseTask<Result>::schedule(Exec& exec)
     {
         return false;
     }
-    if (exec.n_threads() > 0)
+    if (exec.n_threads() == 0)
     {
-        std::vector<gcl::ITask*> roots;
-        m_impl->visit([&roots](BaseImpl& i)
-        {
-            i.prepare();
-            if (i.parents().empty())
-            {
-                roots.emplace_back(&i);
-            }
-        });
-        for (const auto root : roots)
-        {
-            exec.execute(*root);
-        }
+        return schedule();
     }
-    else
+    std::vector<gcl::ITask*> roots;
+    m_impl->visit([&roots](BaseImpl& i)
     {
-        gcl::ITask* task = nullptr;
-        m_impl->visit([&task](BaseImpl& i)
+        i.prepare();
+        if (i.parents().empty())
         {
-            i.prepare();
-            i.previous() = task;
-            if (task)
-            {
-                task->next() = &i;
-            }
-            task = &i;
-        });
+            roots.emplace_back(&i);
+        }
+    });
+    for (const auto root : roots)
+    {
+        exec.execute(*root);
+    }
+    return true;
+}
 
-        do
-        {
-            task->call();
-            task->set_finished();
-            const auto previous = task->previous();
-            if (previous)
-            {
-                previous->next() = nullptr;
-                task->previous() = nullptr;
-            }
-            task = previous;
-        }
-        while (task);
+template<typename Result> 
+bool BaseTask<Result>::schedule()
+{
+    if (is_scheduled())
+    {
+        return false;
     }
+    gcl::ITask* task = nullptr;
+    m_impl->visit([&task](BaseImpl& i)
+    {
+        i.prepare();
+        i.previous() = task;
+        if (task)
+        {
+            task->next() = &i;
+        }
+        task = &i;
+    });
+
+    do
+    {
+        task->call();
+        task->set_finished();
+        const auto previous = task->previous();
+        if (previous)
+        {
+            previous->next() = nullptr;
+            task->previous() = nullptr;
+        }
+        task = previous;
+    }
+    while (task);
     return true;
 }
 
