@@ -55,8 +55,8 @@ public:
 struct AsyncConfig
 {
     std::uint_fast64_t scheduler_random_seed = 0;
-    std::chrono::microseconds processor_sleep_interval = std::chrono::microseconds{1};
-    std::chrono::microseconds scheduler_sleep_interval = std::chrono::microseconds{1};
+    std::chrono::microseconds processor_sleep_interval = std::chrono::microseconds{100};
+    std::chrono::microseconds scheduler_sleep_interval = std::chrono::microseconds{100};
     std::function<void(std::size_t thread_index)> on_processor_thread_started;
     std::function<void()> on_scheduler_thread_started;
 };
@@ -119,7 +119,7 @@ public:
     bool has_result() const;
 
     // Waits for this task to finish
-    void wait(bool yields = true, std::chrono::microseconds sleep_interval = std::chrono::microseconds{1}) const;
+    void wait(std::chrono::microseconds sleep_interval = std::chrono::microseconds{100}) const;
 
     // Auto-release means automatic result clean-up once a parent's result was fully consumed
     void set_auto_release(bool auto_release);
@@ -869,14 +869,10 @@ bool BaseTask<Result>::has_result() const
 }
 
 template<typename Result>
-void BaseTask<Result>::wait(const bool yields, const std::chrono::microseconds sleep_interval) const
+void BaseTask<Result>::wait(const std::chrono::microseconds sleep_interval) const
 {
     while (!has_result())
     {
-        if (yields)
-        {
-            std::this_thread::yield();
-        }
         if (sleep_interval > std::chrono::microseconds{0})
         {
             std::this_thread::sleep_for(sleep_interval);
