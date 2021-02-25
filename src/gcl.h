@@ -47,6 +47,7 @@ class Exec
 {
 public:
     virtual ~Exec() = default;
+    virtual void set_active(bool active) = 0;
     virtual std::size_t n_threads() const = 0;
     virtual void execute(ITask& task) = 0;
 };
@@ -54,6 +55,7 @@ public:
 // Config struct for the Async class
 struct AsyncConfig
 {
+    bool active = false;
     std::uint_fast64_t scheduler_random_seed = 0;
     std::chrono::microseconds processor_sleep_interval = std::chrono::microseconds{100};
     std::chrono::microseconds scheduler_sleep_interval = std::chrono::microseconds{100};
@@ -69,6 +71,7 @@ public:
     Async(std::size_t n_threads = 0, gcl::AsyncConfig config = {});
     ~Async();
 
+    void set_active(bool active) override;
     std::size_t n_threads() const override;
     void execute(ITask& task) override;
 private:

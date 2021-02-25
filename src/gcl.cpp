@@ -13,18 +13,6 @@ namespace gcl
 namespace
 {
 
-void sleep_for(std::atomic<bool>& done, std::atomic<bool>& interrupted, const std::chrono::microseconds interval)
-{
-    if (interval <= std::chrono::microseconds{0})
-    {
-        return;
-    }
-    while (!interrupted && !done)
-    {
-        std::this_thread::sleep_for(interval);
-    }
-}
-
 class SpinLock
 {
 public:
@@ -72,6 +60,12 @@ public:
     TaskQueue(const TaskQueue&) = delete;
     TaskQueue& operator=(const TaskQueue&) = delete;
 
+    std::size_t size() const
+    {
+        LockGuard lock{m_spin};
+        return m_size;
+    }
+
     void push(ITask* const task)
     {
         LockGuard lock{m_spin};
@@ -86,6 +80,7 @@ public:
             m_head = task;
             m_tail = task;
         }
+        ++m_size;
     }
 
     ITask* pop()
@@ -107,16 +102,30 @@ public:
                     m_tail = nullptr;
                 }
                 task->next() = nullptr;
+                --m_size;
             }
         }
         return task;
     }
 
 private:
-    SpinLock m_spin;
+    mutable SpinLock m_spin;
     ITask* m_head = nullptr;
     ITask* m_tail = nullptr;
+    std::size_t m_size = 0;
 };
+
+void sleep_for(const TaskQueue& queue, const std::atomic<bool>& active, const std::chrono::microseconds interval)
+{
+    if (interval <= std::chrono::microseconds{0})
+    {
+        return;
+    }
+    while (!active && queue.size() == 0)
+    {
+        std::this_thread::sleep_for(interval);
+    }
+}
 
 class Processor
 {
@@ -126,10 +135,10 @@ public:
     Processor(const std::size_t index,
               const AsyncConfig& config,
               TaskQueue& completed,
-              std::atomic<bool>& one_completed)
+              const std::atomic<bool>& active)
         : m_config{config}
         , m_completed{completed}
-        , m_one_completed{one_completed}
+        , m_active{active}
         , m_thread{&Processor::worker, this, index}
     {}
 
@@ -141,9 +150,7 @@ public:
 
     void push(ITask* const task)
     {
-        m_sleep_interrupted = true;
         m_scheduled.push(task);
-        m_sleep_interrupted = true;
     }
 
 private:
@@ -158,19 +165,15 @@ private:
             while (const auto task = m_scheduled.pop())
             {
                 task->call();
-                m_one_completed = true;
                 m_completed.push(task);
-                m_one_completed = true;
             }
-            m_sleep_interrupted = false;
-            sleep_for(m_done, m_sleep_interrupted, m_config.processor_sleep_interval);
+            sleep_for(m_scheduled, m_active, m_config.processor_sleep_interval);
         }
     }
 
     const AsyncConfig& m_config;
     TaskQueue& m_completed;
-    std::atomic<bool>& m_one_completed;
-    std::atomic<bool> m_sleep_interrupted{false};
+    const std::atomic<bool>& m_active;
     std::atomic<bool> m_done{false};
     TaskQueue m_scheduled;
     std::thread m_thread;
@@ -183,7 +186,8 @@ struct Async::Impl
     explicit
     Impl(const std::size_t n_threads, AsyncConfig config)
         : m_config{std::move(config)}
-        , m_randgen{config.scheduler_random_seed > 0 ? config.scheduler_random_seed : std::random_device{}()}
+        , m_active{std::move(m_config.active)}
+        , m_randgen{m_config.scheduler_random_seed > 0 ? m_config.scheduler_random_seed : std::random_device{}()}
     {
         if (n_threads > 0)
         {
@@ -192,17 +196,23 @@ struct Async::Impl
         m_processors.reserve(n_threads);
         for (std::size_t i = 0; i < n_threads; ++i)
         {
-            m_processors.emplace_back(std::make_unique<Processor>(i, m_config, m_completed, m_sleep_interrupted));
+            m_processors.emplace_back(std::make_unique<Processor>(i, m_config, m_completed, m_active));
         }
     }
 
     ~Impl()
     {
-        if (!m_processors.empty())
+        if (n_threads() > 0)
         {
+            m_active = true;
             m_done = true;
             m_thread.join();
         }
+    }
+
+    void set_active(const bool active)
+    {
+        m_active = active;
     }
 
     std::size_t n_threads() const
@@ -212,7 +222,7 @@ struct Async::Impl
 
     void execute(ITask& task)
     {
-        GCL_ASSERT(!m_processors.empty());
+        GCL_ASSERT(n_threads() > 0);
         std::size_t index;
         if (task.get_thread_affinity() >= 0 && static_cast<std::size_t>(task.get_thread_affinity()) < m_processors.size())
         {
@@ -246,13 +256,12 @@ private:
                     }
                 }
             }
-            m_sleep_interrupted = false;
-            sleep_for(m_done, m_sleep_interrupted, m_config.scheduler_sleep_interval);
+            sleep_for(m_completed, m_active, m_config.scheduler_sleep_interval);
         }
     }
 
     AsyncConfig m_config;
-    std::atomic<bool> m_sleep_interrupted{false};
+    std::atomic<bool> m_active;
     std::atomic<bool> m_done{false};
     TaskQueue m_completed;
     std::vector<std::unique_ptr<Processor>> m_processors;
@@ -265,6 +274,11 @@ Async::Async(const std::size_t n_threads, AsyncConfig config)
 {}
 
 Async::~Async() = default;
+
+void Async::set_active(const bool active)
+{
+    m_impl->set_active(active);
+}
 
 std::size_t Async::n_threads() const
 {
