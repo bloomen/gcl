@@ -119,7 +119,7 @@ public:
     bool has_result() const;
 
     // Waits for this task to finish
-    void wait(bool yields = true, std::chrono::microseconds sleep_interval = std::chrono::microseconds{0}) const;
+    void wait(bool yields = true, std::chrono::microseconds sleep_interval = std::chrono::microseconds{1}) const;
 
     // Auto-release means automatic result clean-up once a parent's result was fully consumed
     void set_auto_release(bool auto_release);
