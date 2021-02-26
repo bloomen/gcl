@@ -24,9 +24,8 @@ void test_schedule(const std::size_t n_threads)
         return *p1.get() + *p2.get();
     });
     gcl::Async async{n_threads};
-    REQUIRE(!t.wait());
     REQUIRE(t.schedule(async));
-    REQUIRE(t.wait());
+    t.wait();
     REQUIRE(55 == *t.get());
 }
 
@@ -60,7 +59,7 @@ void test_schedule_and_cancel(const std::size_t n_threads)
     ct.set_canceled();
     gcl::Async async{n_threads};
     REQUIRE(t.schedule(async));
-    REQUIRE(t.wait());
+    t.wait();
     REQUIRE(-1 == *t.get());
 }
 
@@ -89,7 +88,7 @@ void test_schedule_and_auto_release(const std::size_t n_threads)
     t.set_auto_release(true);
     gcl::Async async{n_threads};
     REQUIRE(t.schedule(async));
-    REQUIRE(t.wait());
+    t.wait();
     REQUIRE(!p1.has_result());
     REQUIRE(!p2.has_result());
     REQUIRE(t.has_result());
@@ -128,7 +127,7 @@ TEST_CASE("schedule_using_reference_type")
     auto t = p.then([](auto p) -> int& { return *p.get(); });
     gcl::Async async{4};
     REQUIRE(t.schedule(async));
-    REQUIRE(t.wait());
+    t.wait();
     REQUIRE(42 == *p.get());
     REQUIRE(&x == p.get());
 }
@@ -180,7 +179,7 @@ void test_schedule_a_wide_graph(const std::size_t n_threads,
         config.use_condition_variable = use_conditon_variable;
         gcl::Async async{n_threads, config};
         REQUIRE(bottom.schedule(async));
-        REQUIRE(bottom.wait());
+        bottom.wait();
     }
     REQUIRE(22 == x);
 }
@@ -256,10 +255,10 @@ void test_schedule_twice(const std::size_t n_threads)
     auto t = gcl::when(p1, p2);
     gcl::Async async{n_threads};
     REQUIRE(t.schedule(async));
-    REQUIRE(t.wait());
+    t.wait();
     REQUIRE(2 == x);
     REQUIRE(t.schedule(async));
-    REQUIRE(t.wait());
+    t.wait();
     REQUIRE(4 == x);
 }
 
@@ -370,7 +369,7 @@ void test_for_each(const std::size_t n_threads)
     auto t = gcl::for_each(data.begin(), data.end(), [](auto it){ *it *= 2; });
     gcl::Async async{n_threads};
     REQUIRE(t.schedule(async));
-    REQUIRE(t.wait());
+    t.wait();
     const std::vector<double> data_exp{2, 4, 6, 8, 10};
     REQUIRE(data_exp == data);
 }
@@ -414,6 +413,6 @@ TEST_CASE("schedule_with_thread_affinity")
     t.set_thread_affinity(2);
     gcl::Async async{2};
     REQUIRE(t.schedule(async));
-    REQUIRE(t.wait());
+    t.wait();
     REQUIRE(55 == *t.get());
 }
