@@ -24,8 +24,9 @@ void test_schedule(const std::size_t n_threads)
         return *p1.get() + *p2.get();
     });
     gcl::Async async{n_threads};
+    REQUIRE(!t.wait());
     REQUIRE(t.schedule(async));
-    t.wait();
+    REQUIRE(t.wait());
     REQUIRE(55 == *t.get());
 }
 
@@ -59,7 +60,7 @@ void test_schedule_and_cancel(const std::size_t n_threads)
     ct.set_canceled();
     gcl::Async async{n_threads};
     REQUIRE(t.schedule(async));
-    t.wait();
+    REQUIRE(t.wait());
     REQUIRE(-1 == *t.get());
 }
 
@@ -88,7 +89,7 @@ void test_schedule_and_auto_release(const std::size_t n_threads)
     t.set_auto_release(true);
     gcl::Async async{n_threads};
     REQUIRE(t.schedule(async));
-    t.wait();
+    REQUIRE(t.wait());
     REQUIRE(!p1.has_result());
     REQUIRE(!p2.has_result());
     REQUIRE(t.has_result());
@@ -127,7 +128,7 @@ TEST_CASE("schedule_using_reference_type")
     auto t = p.then([](auto p) -> int& { return *p.get(); });
     gcl::Async async{4};
     REQUIRE(t.schedule(async));
-    t.wait();
+    REQUIRE(t.wait());
     REQUIRE(42 == *p.get());
     REQUIRE(&x == p.get());
 }
@@ -144,7 +145,9 @@ TEST_CASE("schedule_and_release")
     REQUIRE(!t.has_result());
 }
 
-void test_schedule_a_wide_graph(const std::size_t n_threads)
+void test_schedule_a_wide_graph(const std::size_t n_threads,
+                                const bool use_conditon_variable,
+                                const bool use_schedule_overload)
 {
     std::atomic<int> x{0};
     std::mutex m;
@@ -167,25 +170,43 @@ void test_schedule_a_wide_graph(const std::size_t n_threads)
         tasks.push_back(t2);
     }
     auto bottom = gcl::tie(tasks).then([&x](gcl::Vec<int>) { x++; });
-    gcl::Async async{n_threads};
-    REQUIRE(bottom.schedule(async));
-    bottom.wait();
+    if (use_schedule_overload)
+    {
+        bottom.schedule();
+    }
+    else
+    {
+        gcl::AsyncConfig config;
+        config.use_condition_variable = use_conditon_variable;
+        gcl::Async async{n_threads, config};
+        REQUIRE(bottom.schedule(async));
+        REQUIRE(bottom.wait());
+    }
     REQUIRE(22 == x);
 }
 
 TEST_CASE("schedule_a_wide_graph")
 {
-    test_schedule_a_wide_graph(0);
+    test_schedule_a_wide_graph(0, false, false);
+    test_schedule_a_wide_graph(0, true, true);
+    test_schedule_a_wide_graph(0, true, false);
+    test_schedule_a_wide_graph(0, false, true);
 }
 
 TEST_CASE("schedule_a_wide_graph_with_1_thread")
 {
-    test_schedule_a_wide_graph(1);
+    test_schedule_a_wide_graph(1, false, false);
+    test_schedule_a_wide_graph(1, true, true);
+    test_schedule_a_wide_graph(1, true, false);
+    test_schedule_a_wide_graph(1, false, true);
 }
 
 TEST_CASE("schedule_a_wide_graph_with_4_threads")
 {
-    test_schedule_a_wide_graph(1);
+    test_schedule_a_wide_graph(4, false, false);
+    test_schedule_a_wide_graph(4, true, true);
+    test_schedule_a_wide_graph(4, true, false);
+    test_schedule_a_wide_graph(4, false, true);
 }
 
 TEST_CASE("schedule_with_mixed_parents")
@@ -235,10 +256,10 @@ void test_schedule_twice(const std::size_t n_threads)
     auto t = gcl::when(p1, p2);
     gcl::Async async{n_threads};
     REQUIRE(t.schedule(async));
-    t.wait();
+    REQUIRE(t.wait());
     REQUIRE(2 == x);
     REQUIRE(t.schedule(async));
-    t.wait();
+    REQUIRE(t.wait());
     REQUIRE(4 == x);
 }
 
@@ -349,7 +370,7 @@ void test_for_each(const std::size_t n_threads)
     auto t = gcl::for_each(data.begin(), data.end(), [](auto it){ *it *= 2; });
     gcl::Async async{n_threads};
     REQUIRE(t.schedule(async));
-    t.wait();
+    REQUIRE(t.wait());
     const std::vector<double> data_exp{2, 4, 6, 8, 10};
     REQUIRE(data_exp == data);
 }
@@ -393,6 +414,6 @@ TEST_CASE("schedule_with_thread_affinity")
     t.set_thread_affinity(2);
     gcl::Async async{2};
     REQUIRE(t.schedule(async));
-    t.wait();
+    REQUIRE(t.wait());
     REQUIRE(55 == *t.get());
 }
