@@ -9,11 +9,11 @@
 #include <chrono>
 #include <cstdint>
 #include <functional>
+#include <future>
 #include <memory>
 #include <queue>
 #include <thread>
 #include <tuple>
-#include <unordered_set>
 #include <vector>
 
 #ifndef GCL_ASSERT
@@ -127,8 +127,8 @@ public:
     // Returns true if this task has a result
     bool has_result() const;
 
-    // Waits for this task to finish
-    void wait(std::chrono::microseconds sleep_interval = std::chrono::microseconds{100}) const;
+    // Waits for this task to finish and returns true on success. Returns false if task was never scheduled
+    bool wait() const;
 
     // Auto-release means automatic result clean-up once a parent's result was fully consumed
     void set_auto_release(bool auto_release);
@@ -336,8 +336,7 @@ public:
                 parent->auto_release();
             }
         }
-        m_has_result = true;
-        m_scheduled = false;
+        m_promise.set_value();
     }
 
     gcl::ITask*& next() override
@@ -399,9 +398,19 @@ public:
         }
     }
 
+    bool wait() const
+    {
+        if (!m_future.valid())
+        {
+            return false;
+        }
+        m_future.wait();
+        return true;
+    }
+
     bool is_scheduled() const
     {
-        return m_scheduled;
+        return m_future.valid() && m_future.wait_for(std::chrono::seconds{0}) != std::future_status::ready;
     }
 
     void add_child(BaseImpl& child)
@@ -455,10 +464,10 @@ public:
 protected:
     BaseImpl() = default;
 
+    std::promise<void> m_promise;
+    std::future<void> m_future;
     int m_thread_affinity = -1;
     std::atomic<bool> m_auto_release{false};
-    std::atomic<bool> m_has_result{false};
-    std::atomic<bool> m_scheduled{false};
     bool m_visited = false;
     std::unique_ptr<std::vector<BaseImpl*>> m_task_cache;
     std::vector<BaseImpl*> m_parents;
@@ -654,13 +663,21 @@ template<typename Result>
 class Channel
 {
 public:
-    explicit
-    Channel(const std::atomic<bool>& has_result)
-        : m_has_result{has_result}
-    {}
+    Channel() = default;
 
     Channel(const Channel&) = delete;
     Channel& operator=(const Channel&) = delete;
+
+    ~Channel()
+    {
+        reset();
+    }
+
+    void set_future(const std::future<void>& future)
+    {
+        GCL_ASSERT(future.valid());
+        m_future = &future;
+    }
 
     // producer
     void set(gcl::detail::ChannelElement<Result>&& element)
@@ -671,7 +688,7 @@ public:
     // consumer
     const gcl::detail::ChannelElement<Result>* get() const
     {
-        if (!m_has_result)
+        if (!m_future || m_future->wait_for(std::chrono::seconds{0}) != std::future_status::ready)
         {
             return nullptr;
         }
@@ -685,10 +702,11 @@ public:
         {
             element->~ChannelElement();
         }
+        m_future = nullptr;
     }
 
 private:
-    const std::atomic<bool>& m_has_result;
+    const std::future<void>* m_future = nullptr;
     char m_storage[sizeof(gcl::detail::ChannelElement<Result>)];
 };
 
@@ -776,11 +794,12 @@ struct BaseTask<Result>::Impl : BaseImpl
 
     void prepare() override
     {
-        m_has_result = false;
-        m_scheduled = true;
+        m_promise = {};
+        m_future = m_promise.get_future();
         m_parents_ready = 0;
         m_children_ready = 0;
         m_channel.reset();
+        m_channel.set_future(m_future);
     }
 
     void call() override
@@ -790,7 +809,6 @@ struct BaseTask<Result>::Impl : BaseImpl
 
     void release() override
     {
-        m_has_result = false;
         m_channel.reset();
     }
 
@@ -801,7 +819,7 @@ struct BaseTask<Result>::Impl : BaseImpl
 
 private:
     std::unique_ptr<gcl::detail::Binding<Result>> m_binding;
-    Channel<Result> m_channel{m_has_result};
+    Channel<Result> m_channel;
 };
 
 template<typename Result>
@@ -887,15 +905,9 @@ bool BaseTask<Result>::has_result() const
 }
 
 template<typename Result>
-void BaseTask<Result>::wait(const std::chrono::microseconds sleep_interval) const
+bool BaseTask<Result>::wait() const
 {
-    while (!has_result())
-    {
-        if (sleep_interval > std::chrono::microseconds{0})
-        {
-            std::this_thread::sleep_for(sleep_interval);
-        }
-    }
+    return m_impl->wait();
 }
 
 template<typename Result>
