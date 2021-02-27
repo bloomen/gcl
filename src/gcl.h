@@ -42,16 +42,6 @@ public:
     virtual ITask*& previous() = 0;
 };
 
-// Executor interface for running tasks
-class Exec
-{
-public:
-    virtual ~Exec() = default;
-    virtual void set_active(bool active) = 0;
-    virtual std::size_t n_threads() const = 0;
-    virtual void execute(ITask& task) = 0;
-};
-
 // Config struct for the Async class
 struct AsyncConfig
 {
@@ -74,16 +64,16 @@ struct AsyncConfig
 };
 
 // Async executor for asynchronous execution
-class Async : public gcl::Exec
+class Async
 {
 public:
     explicit
     Async(std::size_t n_threads = 0, gcl::AsyncConfig config = {});
     ~Async();
 
-    void set_active(bool active) override; // only relevant for QueueType::Spin
-    std::size_t n_threads() const override;
-    void execute(ITask& task) override;
+    void set_active(bool active); // only relevant for QueueType::Spin
+    std::size_t n_threads() const;
+    void execute(ITask& task);
 private:
     struct Impl;
     std::unique_ptr<Impl> m_impl;
@@ -123,7 +113,7 @@ public:
 
     // Schedules this task and its parents for execution. Returns true if successfully scheduled
     // and false if already scheduled and not finished
-    bool schedule_all(gcl::Exec& e);
+    bool schedule_all(gcl::Async& async);
 
     // Runs this task and its parents synchronously on the current thread. Returns true if successfully scheduled
     // and false if already scheduled and not finished
@@ -878,13 +868,13 @@ void BaseTask<Result>::set_thread_affinity(const std::size_t thread_index)
 }
 
 template<typename Result>
-bool BaseTask<Result>::schedule_all(Exec& exec)
+bool BaseTask<Result>::schedule_all(gcl::Async& async)
 {
     if (is_scheduled())
     {
         return false;
     }
-    if (exec.n_threads() == 0)
+    if (async.n_threads() == 0)
     {
         return schedule_all();
     }
@@ -899,7 +889,7 @@ bool BaseTask<Result>::schedule_all(Exec& exec)
     });
     for (const auto root : roots)
     {
-        exec.execute(*root);
+        async.execute(*root);
     }
     return true;
 }
