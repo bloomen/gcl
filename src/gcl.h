@@ -34,7 +34,7 @@ class ITask
 public:
     virtual ~ITask() = default;
     virtual void call() = 0;
-    virtual int get_thread_affinity() const = 0;
+    virtual int thread_affinity() const = 0;
     virtual const std::vector<ITask*>& children() const = 0;
     virtual bool set_parent_finished() = 0;
     virtual void set_finished() = 0;
@@ -319,7 +319,7 @@ public:
     virtual ~BaseImpl() = default;
 
     // Called from scheduler thread
-    int get_thread_affinity() const override
+    int thread_affinity() const override
     {
         return m_thread_affinity;
     }

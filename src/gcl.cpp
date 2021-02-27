@@ -304,9 +304,9 @@ struct Async::Impl
     {
         GCL_ASSERT(n_threads() > 0);
         std::size_t index;
-        if (task.get_thread_affinity() >= 0 && static_cast<std::size_t>(task.get_thread_affinity()) < m_processors.size())
+        if (task.thread_affinity() >= 0 && static_cast<std::size_t>(task.thread_affinity()) < m_processors.size())
         {
-            index = static_cast<std::size_t>(task.get_thread_affinity());
+            index = static_cast<std::size_t>(task.thread_affinity());
         }
         else
         {
