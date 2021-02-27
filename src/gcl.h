@@ -679,10 +679,7 @@ template<typename Result>
 class Channel
 {
 public:
-    explicit
-    Channel(const std::atomic<bool>& scheduled)
-        : m_scheduled{scheduled}
-    {}
+    Channel() = default;
 
     Channel(const Channel&) = delete;
     Channel& operator=(const Channel&) = delete;
@@ -706,10 +703,6 @@ public:
 
     const gcl::detail::ChannelElement<Result>* get() const
     {
-        if (m_scheduled)
-        {
-            return nullptr;
-        }
         if (!m_future || m_future.load()->wait_for(std::chrono::seconds{0}) != std::future_status::ready)
         {
             return nullptr;
@@ -728,8 +721,7 @@ public:
     }
 
 private:
-    const std::atomic<bool>& m_scheduled;
-    std::atomic<const std::future<void>*> m_future = nullptr;
+    std::atomic<const std::future<void>*> m_future{nullptr};
     char m_storage[sizeof(gcl::detail::ChannelElement<Result>)];
 };
 
@@ -842,12 +834,16 @@ struct BaseTask<Result>::Impl : BaseImpl
 
     const ChannelElement<Result>* channel_element() const
     {
+        if (m_scheduled)
+        {
+            return nullptr;
+        }
         return m_channel.get();
     }
 
 private:
     std::unique_ptr<gcl::detail::Binding<Result>> m_binding;
-    Channel<Result> m_channel{m_scheduled};
+    Channel<Result> m_channel;
 };
 
 template<typename Result>
