@@ -346,12 +346,12 @@ public:
                 parent->auto_release_if();
             }
         }
-        m_scheduled = false;
         m_promise.set_value();
         if (m_children.empty())
         {
             auto_release_if();
         }
+        m_scheduled = false;
     }
 
     // Called from scheduler and processor threads but never simultaneously
@@ -679,7 +679,10 @@ template<typename Result>
 class Channel
 {
 public:
-    Channel() = default;
+    explicit
+    Channel(const std::atomic<bool>& scheduled)
+        : m_scheduled{scheduled}
+    {}
 
     Channel(const Channel&) = delete;
     Channel& operator=(const Channel&) = delete;
@@ -703,13 +706,18 @@ public:
 
     const gcl::detail::ChannelElement<Result>* get() const
     {
-        if (!m_future || m_future->wait_for(std::chrono::seconds{0}) != std::future_status::ready)
+        if (m_scheduled)
+        {
+            return nullptr;
+        }
+        if (!m_future || m_future.load()->wait_for(std::chrono::seconds{0}) != std::future_status::ready)
         {
             return nullptr;
         }
         return reinterpret_cast<const gcl::detail::ChannelElement<Result>*>(m_storage);
     }
 
+    // Called from either control or scheduler thread
     void reset()
     {
         if (const auto element = get())
@@ -720,7 +728,8 @@ public:
     }
 
 private:
-    const std::future<void>* m_future = nullptr;
+    const std::atomic<bool>& m_scheduled;
+    std::atomic<const std::future<void>*> m_future = nullptr;
     char m_storage[sizeof(gcl::detail::ChannelElement<Result>)];
 };
 
@@ -810,11 +819,11 @@ struct BaseTask<Result>::Impl : BaseImpl
 
     void prepare() override
     {
+        m_parents_ready = 0;
+        m_children_ready = 0;
         m_promise = {};
         m_future = m_promise.get_future();
         m_scheduled = true;
-        m_parents_ready = 0;
-        m_children_ready = 0;
         m_channel.reset();
         m_channel.set_future(m_future);
     }
@@ -825,6 +834,7 @@ struct BaseTask<Result>::Impl : BaseImpl
         gcl::detail::Evaluate<Result>{}(m_channel, *m_binding);
     }
 
+    // Called from either control or scheduler thread
     void release() override
     {
         m_channel.reset();
@@ -837,7 +847,7 @@ struct BaseTask<Result>::Impl : BaseImpl
 
 private:
     std::unique_ptr<gcl::detail::Binding<Result>> m_binding;
-    Channel<Result> m_channel;
+    Channel<Result> m_channel{m_scheduled};
 };
 
 template<typename Result>
