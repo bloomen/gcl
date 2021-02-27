@@ -322,26 +322,31 @@ void for_each(const Functor& f, Tasks&&... tasks)
     gcl::detail::for_each_impl(f, std::forward<Tasks>(tasks)...);
 }
 
+// Unless otherwise mentioned a given method is called from the control thread
 class BaseImpl : public gcl::ITask
 {
 public:
     virtual ~BaseImpl() = default;
 
+    // Called from scheduler thread
     int get_thread_affinity() const override
     {
         return m_thread_affinity;
     }
 
+    // Called from scheduler thread
     const std::vector<gcl::ITask*>& children() const override
     {
         return m_children;
     }
 
+    // Called from scheduler thread
     bool set_parent_finished() override
     {
         return ++m_parents_ready == m_parents.size();
     }
 
+    // Called from scheduler thread
     void set_finished() override
     {
         for (const auto parent : parents())
@@ -359,11 +364,13 @@ public:
         }
     }
 
+    // Called from scheduler and processor threads but never simultaneously
     gcl::ITask*& next() override
     {
         return m_next;
     }
 
+    // Called from scheduler and processor threads but never simultaneously
     gcl::ITask*& previous() override
     {
         return m_previous;
@@ -439,16 +446,19 @@ public:
         parent.add_child(*this);
     }
 
+    // Called from scheduler thread
     const std::vector<BaseImpl*>& parents() const
     {
         return m_parents;
     }
 
+    // Called from scheduler thread
     bool set_child_finished()
     {
         return ++m_children_ready == m_children.size();
     }
 
+    // Called from scheduler thread
     void auto_release_if()
     {
         if (m_auto_release)
@@ -674,6 +684,7 @@ private:
     std::exception_ptr m_exception;
 };
 
+// Unless otherwise mentioned a given method is called from the control thread
 template<typename Result>
 class Channel
 {
@@ -694,13 +705,12 @@ public:
         m_future = &future;
     }
 
-    // producer
+    // Called from a processor thread
     void set(gcl::detail::ChannelElement<Result>&& element)
     {
         new (m_storage) gcl::detail::ChannelElement<Result>{std::move(element)};
     }
 
-    // consumer
     const gcl::detail::ChannelElement<Result>* get() const
     {
         if (!m_future || m_future->wait_for(std::chrono::seconds{0}) != std::future_status::ready)
@@ -710,7 +720,6 @@ public:
         return reinterpret_cast<const gcl::detail::ChannelElement<Result>*>(m_storage);
     }
 
-    // consumer
     void reset()
     {
         if (const auto element = get())
@@ -796,6 +805,7 @@ struct Evaluate<void>
     }
 };
 
+// Unless otherwise mentioned a given method is called from the control thread
 template<typename Result>
 struct BaseTask<Result>::Impl : BaseImpl
 {
@@ -819,6 +829,7 @@ struct BaseTask<Result>::Impl : BaseImpl
         m_channel.set_future(m_future);
     }
 
+    // Called from a processor thread
     void call() override
     {
         gcl::detail::Evaluate<Result>{}(m_channel, *m_binding);
