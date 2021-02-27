@@ -123,10 +123,10 @@ public:
 
     // Schedules this task and its parents for execution. Returns true if successfully scheduled and false
     // if already scheduled and not finished.
-    bool schedule(gcl::Exec& e);
+    bool schedule_all(gcl::Exec& e);
 
-    // Runs tasks synchronously on the current thread
-    bool schedule();
+    // Runs this task and its parents synchronously on the current thread
+    bool schedule_all();
 
     // Returns true of this task is currently being scheduled
     bool is_scheduled() const;
@@ -137,7 +137,7 @@ public:
     // Waits for this task to finish
     void wait() const;
 
-    // Auto-release means automatic result clean-up once a parent's result was fully consumed
+    // Sets whether this task's result and its parents' results should be automatically released.
     void set_auto_release(bool auto_release);
 
     // Releases this task's result and its parents' results. Returns true if successfully released and false
@@ -855,7 +855,7 @@ void BaseTask<Result>::set_thread_affinity(const std::size_t thread_index)
 }
 
 template<typename Result>
-bool BaseTask<Result>::schedule(Exec& exec)
+bool BaseTask<Result>::schedule_all(Exec& exec)
 {
     if (is_scheduled())
     {
@@ -863,7 +863,7 @@ bool BaseTask<Result>::schedule(Exec& exec)
     }
     if (exec.n_threads() == 0)
     {
-        return schedule();
+        return schedule_all();
     }
     std::vector<gcl::ITask*> roots;
     m_impl->visit([&roots](BaseImpl& i)
@@ -882,7 +882,7 @@ bool BaseTask<Result>::schedule(Exec& exec)
 }
 
 template<typename Result> 
-bool BaseTask<Result>::schedule()
+bool BaseTask<Result>::schedule_all()
 {
     if (is_scheduled())
     {
