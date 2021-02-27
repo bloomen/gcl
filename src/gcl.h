@@ -58,9 +58,16 @@ struct AsyncConfig
     std::uint_fast64_t scheduler_random_seed = 0; // to select a random processor for a new task to run
     std::function<void(std::size_t thread_index)> on_processor_thread_started;
     std::function<void()> on_scheduler_thread_started;
-    bool use_condition_variable = true; // implies use of std::mutex
 
-    // below are only used when use_condition_variable == false
+    enum class QueueType
+    {
+        Mutex,
+        Spin
+    };
+
+    QueueType queue_type = QueueType::Mutex;
+
+    // Below are only used for QueueType::Spin
     bool active = false; // whether we're in active mode which skips all sleeping
     std::chrono::microseconds processor_sleep_interval = std::chrono::microseconds{100};
     std::chrono::microseconds scheduler_sleep_interval = std::chrono::microseconds{100};

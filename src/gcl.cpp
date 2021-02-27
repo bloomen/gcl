@@ -33,50 +33,106 @@ private:
     std::atomic_flag m_locked{ATOMIC_FLAG_INIT};
 };
 
-class LockGuard
+class TaskQueue
 {
 public:
+
     explicit
-    LockGuard(SpinLock& spin)
-        : m_spin{spin}
+    TaskQueue(const std::atomic<bool>& done)
+        : m_done{done}
+    {}
+
+    TaskQueue(const TaskQueue&) = delete;
+    TaskQueue& operator=(const TaskQueue&) = delete;
+
+    virtual void shutdown() {}
+
+    virtual void yield() const {}
+
+    virtual std::size_t size() const = 0;
+
+    virtual void push(ITask* const task)
     {
-        m_spin.lock();
+        if (m_head)
+        {
+            m_tail->next() = task;
+            task->previous() = m_tail;
+            m_tail = task;
+        }
+        else
+        {
+            m_head = task;
+            m_tail = task;
+        }
+        ++m_size;
     }
 
-    ~LockGuard() noexcept
+    virtual ITask* pop()
     {
-        m_spin.unlock();
+        ITask* task = nullptr;
+        if (m_head)
+        {
+            task = m_head;
+            if (task->next())
+            {
+                m_head = task->next();
+                m_head->previous() = nullptr;
+            }
+            else
+            {
+                m_head = nullptr;
+                m_tail = nullptr;
+            }
+            task->next() = nullptr;
+            --m_size;
+        }
+        return task;
     }
+
+protected:
+    const std::atomic<bool>& m_done;
+    std::size_t m_size = 0;
 
 private:
-    SpinLock& m_spin;
+    ITask* m_head = nullptr;
+    ITask* m_tail = nullptr;
 };
 
-class ConditionVariable
+// Mp-Sc queue
+class TaskQueueMutex : public TaskQueue
 {
 public:
 
-    template<typename Pred, typename Functor>
-    auto wait(Pred&& pred, Functor&& functor)
-    {
-        std::unique_lock<std::mutex> lock{m_mutex};
-        m_cv.wait(lock, std::forward<Pred>(pred));
-        return std::forward<Functor>(functor)();
-    }
+    explicit
+    TaskQueueMutex(const std::atomic<bool>& done)
+        : TaskQueue{done}
+    {}
 
-    template<typename Functor>
-    void notify(Functor&& functor)
+    void shutdown() override
     {
-        std::lock_guard<std::mutex> lock{m_mutex};
-        std::forward<Functor>(functor)();
         m_cv.notify_one();
     }
 
-    template<typename Functor>
-    auto protect(Functor&& functor) const
+    std::size_t size() const override
     {
         std::lock_guard<std::mutex> lock{m_mutex};
-        return std::forward<Functor>(functor)();
+        return m_size;
+    }
+
+    // multiple producer
+    void push(ITask* const task) override
+    {
+        std::lock_guard<std::mutex> lock{m_mutex};
+        TaskQueue::push(task);
+        m_cv.notify_one();
+    }
+
+    // single consumer
+    ITask* pop() override
+    {
+        std::unique_lock<std::mutex> lock{m_mutex};
+        m_cv.wait(lock, [this]{ return m_size > 0 || m_done; });
+        return TaskQueue::pop();
     }
 
 private:
@@ -84,130 +140,65 @@ private:
     std::condition_variable m_cv;
 };
 
-// Only used as single-consumer
-class TaskQueue
+// Mp-Sc queue
+class TaskQueueSpin : public TaskQueue
 {
 public:
 
     explicit
-    TaskQueue(const std::atomic<bool>& done, const bool use_condition_variable)
-        : m_done{done}
+    TaskQueueSpin(const std::atomic<bool>& done, const std::atomic<bool>& active, const std::chrono::microseconds sleep_interval)
+        : TaskQueue{done}
+        , m_active{active}
+        , m_sleep_interval{sleep_interval}
+    {}
+
+    void yield() const override
     {
-        if (use_condition_variable)
+        if (m_sleep_interval <= std::chrono::microseconds{0})
         {
-            m_cv = std::make_unique<ConditionVariable>();
+            return;
+        }
+        while (!m_active && size() == 0)
+        {
+            std::this_thread::sleep_for(m_sleep_interval);
         }
     }
 
-    TaskQueue(const TaskQueue&) = delete;
-    TaskQueue& operator=(const TaskQueue&) = delete;
-
-    void shutdown()
+    std::size_t size() const override
     {
-        if (m_cv)
-        {
-            m_cv->notify([]{});
-        }
-    }
-
-    std::size_t size() const
-    {
-        if (m_cv)
-        {
-            return m_cv->protect([this]{ return m_size; });
-        }
-        else
-        {
-            LockGuard lock{m_spin};
-            return m_size;
-        }
+        std::lock_guard<SpinLock> lock{m_spin};
+        return m_size;
     }
 
     // multiple producer
-    void push(ITask* const task)
+    void push(ITask* const task) override
     {
-        auto push_task = [this, task]
-        {
-            if (m_head)
-            {
-                m_tail->next() = task;
-                task->previous() = m_tail;
-                m_tail = task;
-            }
-            else
-            {
-                m_head = task;
-                m_tail = task;
-            }
-            ++m_size;
-        };
-
-        if (m_cv)
-        {
-            m_cv->notify(push_task);
-        }
-        else
-        {
-            LockGuard lock{m_spin};
-            push_task();
-        }
+        std::lock_guard<SpinLock> lock{m_spin};
+        TaskQueue::push(task);
     }
 
     // single consumer
-    ITask* pop()
+    ITask* pop() override
     {
-        auto pop_task = [this]
-        {
-            ITask* task = nullptr;
-            if (m_head)
-            {
-                task = m_head;
-                if (task->next())
-                {
-                    m_head = task->next();
-                    m_head->previous() = nullptr;
-                }
-                else
-                {
-                    m_head = nullptr;
-                    m_tail = nullptr;
-                }
-                task->next() = nullptr;
-                --m_size;
-            }
-            return task;
-        };
-
-        if (m_cv)
-        {
-            return m_cv->wait([this]{ return m_size > 0 || m_done; }, pop_task);
-        }
-        else
-        {
-            LockGuard lock{m_spin};
-            return pop_task();
-        }
+        std::lock_guard<SpinLock> lock{m_spin};
+        return TaskQueue::pop();
     }
 
 private:
-    const std::atomic<bool>& m_done;
-    std::unique_ptr<ConditionVariable> m_cv;
     mutable SpinLock m_spin;
-    ITask* m_head = nullptr;
-    ITask* m_tail = nullptr;
-    std::size_t m_size = 0;
+    const std::atomic<bool>& m_active;
+    const std::chrono::microseconds m_sleep_interval;
 };
 
-void sleep_for(const TaskQueue& queue, const std::atomic<bool>& active, const std::chrono::microseconds interval)
+std::unique_ptr<TaskQueue> make_task_queue(const AsyncConfig::QueueType queue_type, std::atomic<bool>& done, const std::atomic<bool>& active, const std::chrono::microseconds sleep_interval)
 {
-    if (interval <= std::chrono::microseconds{0})
+    switch (queue_type)
     {
-        return;
+    case AsyncConfig::QueueType::Mutex: return std::make_unique<TaskQueueMutex>(done);
+    case AsyncConfig::QueueType::Spin: return std::make_unique<TaskQueueSpin>(done, active, sleep_interval);
     }
-    while (!active && queue.size() == 0)
-    {
-        std::this_thread::sleep_for(interval);
-    }
+    GCL_ASSERT(false);
+    return nullptr;
 }
 
 class Processor
@@ -222,20 +213,20 @@ public:
         : m_config{config}
         , m_completed{completed}
         , m_active{active}
-        , m_scheduled{m_done, m_config.use_condition_variable}
+        , m_scheduled{make_task_queue(m_config.queue_type, m_done, m_active, m_config.processor_sleep_interval)}
         , m_thread{&Processor::worker, this, index}
     {}
 
     ~Processor()
     {
         m_done = true;
-        m_scheduled.shutdown();
+        m_scheduled->shutdown();
         m_thread.join();
     }
 
     void push(ITask* const task)
     {
-        m_scheduled.push(task);
+        m_scheduled->push(task);
     }
 
 private:
@@ -247,15 +238,12 @@ private:
         }
         while (!m_done)
         {
-            while (const auto task = m_scheduled.pop())
+            while (const auto task = m_scheduled->pop())
             {
                 task->call();
                 m_completed.push(task);
             }
-            if (!m_config.use_condition_variable)
-            {
-                sleep_for(m_scheduled, m_active, m_config.processor_sleep_interval);
-            }
+            m_scheduled->yield();
         }
     }
 
@@ -263,7 +251,7 @@ private:
     TaskQueue& m_completed;
     const std::atomic<bool>& m_active;
     std::atomic<bool> m_done{false};
-    TaskQueue m_scheduled;
+    std::unique_ptr<TaskQueue> m_scheduled;
     std::thread m_thread;
 };
 
@@ -275,7 +263,7 @@ struct Async::Impl
     Impl(const std::size_t n_threads, AsyncConfig config)
         : m_config{std::move(config)}
         , m_active{m_config.active}
-        , m_completed{m_done, m_config.use_condition_variable}
+        , m_completed{make_task_queue(m_config.queue_type, m_done, m_active, m_config.scheduler_sleep_interval)}
         , m_randgen{m_config.scheduler_random_seed > 0 ? m_config.scheduler_random_seed : std::random_device{}()}
     {
         if (n_threads == 0)
@@ -286,7 +274,7 @@ struct Async::Impl
         m_processors.reserve(n_threads);
         for (std::size_t i = 0; i < n_threads; ++i)
         {
-            m_processors.emplace_back(std::make_unique<Processor>(i, m_config, m_completed, m_active));
+            m_processors.emplace_back(std::make_unique<Processor>(i, m_config, *m_completed, m_active));
         }
     }
 
@@ -298,7 +286,7 @@ struct Async::Impl
         }
         m_active = true;
         m_done = true;
-        m_completed.shutdown();
+        m_completed->shutdown();
         m_thread.join();
     }
 
@@ -337,7 +325,7 @@ private:
         }
         while (!m_done)
         {
-            while (const auto task = m_completed.pop())
+            while (const auto task = m_completed->pop())
             {
                 task->set_finished();
                 for (const auto child : task->children())
@@ -348,17 +336,14 @@ private:
                     }
                 }
             }
-            if (!m_config.use_condition_variable)
-            {
-                sleep_for(m_completed, m_active, m_config.scheduler_sleep_interval);
-            }
+            m_completed->yield();
         }
     }
 
     AsyncConfig m_config;
     std::atomic<bool> m_active;
     std::atomic<bool> m_done{false};
-    TaskQueue m_completed;
+    std::unique_ptr<TaskQueue> m_completed;
     std::vector<std::unique_ptr<Processor>> m_processors;
     std::thread m_thread;
     std::mt19937_64 m_randgen;

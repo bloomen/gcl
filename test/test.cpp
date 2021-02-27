@@ -145,7 +145,7 @@ TEST_CASE("schedule_and_release")
 }
 
 void test_schedule_a_wide_graph(const std::size_t n_threads,
-                                const bool use_conditon_variable,
+                                const gcl::AsyncConfig::QueueType queue_type,
                                 const bool use_schedule_overload)
 {
     std::atomic<int> x{0};
@@ -176,7 +176,7 @@ void test_schedule_a_wide_graph(const std::size_t n_threads,
     else
     {
         gcl::AsyncConfig config;
-        config.use_condition_variable = use_conditon_variable;
+        config.queue_type = queue_type;
         gcl::Async async{n_threads, config};
         REQUIRE(bottom.schedule(async));
         bottom.wait();
@@ -186,26 +186,26 @@ void test_schedule_a_wide_graph(const std::size_t n_threads,
 
 TEST_CASE("schedule_a_wide_graph")
 {
-    test_schedule_a_wide_graph(0, false, false);
-    test_schedule_a_wide_graph(0, true, true);
-    test_schedule_a_wide_graph(0, true, false);
-    test_schedule_a_wide_graph(0, false, true);
+    test_schedule_a_wide_graph(0, gcl::AsyncConfig::QueueType::Spin, false);
+    test_schedule_a_wide_graph(0, gcl::AsyncConfig::QueueType::Mutex, true);
+    test_schedule_a_wide_graph(0, gcl::AsyncConfig::QueueType::Mutex, false);
+    test_schedule_a_wide_graph(0, gcl::AsyncConfig::QueueType::Spin, true);
 }
 
 TEST_CASE("schedule_a_wide_graph_with_1_thread")
 {
-    test_schedule_a_wide_graph(1, false, false);
-    test_schedule_a_wide_graph(1, true, true);
-    test_schedule_a_wide_graph(1, true, false);
-    test_schedule_a_wide_graph(1, false, true);
+    test_schedule_a_wide_graph(1, gcl::AsyncConfig::QueueType::Spin, false);
+    test_schedule_a_wide_graph(1, gcl::AsyncConfig::QueueType::Mutex, true);
+    test_schedule_a_wide_graph(1, gcl::AsyncConfig::QueueType::Mutex, false);
+    test_schedule_a_wide_graph(1, gcl::AsyncConfig::QueueType::Spin, true);
 }
 
 TEST_CASE("schedule_a_wide_graph_with_4_threads")
 {
-    test_schedule_a_wide_graph(4, false, false);
-    test_schedule_a_wide_graph(4, true, true);
-    test_schedule_a_wide_graph(4, true, false);
-    test_schedule_a_wide_graph(4, false, true);
+    test_schedule_a_wide_graph(4, gcl::AsyncConfig::QueueType::Spin, false);
+    test_schedule_a_wide_graph(4, gcl::AsyncConfig::QueueType::Mutex, true);
+    test_schedule_a_wide_graph(4, gcl::AsyncConfig::QueueType::Mutex, false);
+    test_schedule_a_wide_graph(4, gcl::AsyncConfig::QueueType::Spin, true);
 }
 
 TEST_CASE("schedule_with_mixed_parents")
