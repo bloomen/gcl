@@ -346,11 +346,11 @@ public:
                 parent->auto_release_if();
             }
         }
-        m_promise.set_value();
         if (m_children.empty())
         {
             auto_release_if();
         }
+        m_promise.set_value();
         m_scheduled = false;
     }
 
@@ -417,6 +417,7 @@ public:
     void wait() const
     {
         m_future.wait();
+        while (is_scheduled());
     }
 
     bool is_scheduled() const
