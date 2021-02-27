@@ -117,22 +117,19 @@ public:
     template<typename Functor>
     auto then(Functor&& functor) &&;
 
-    // Specifies a particular thread this task and its parents should run on.
-    // If not specified then they'll run on a randomly selected thread.
-    void set_thread_affinity_all(std::size_t thread_index);
-
     // Specifies a particular thread the task should run on.
-    // If not specified then it'll run on a randomly selected thread.
+    // If not specified then it'll run on a randomly selected thread
     void set_thread_affinity(std::size_t thread_index);
 
-    // Schedules this task and its parents for execution. Returns true if successfully scheduled and false
-    // if already scheduled and not finished.
+    // Schedules this task and its parents for execution. Returns true if successfully scheduled
+    // and false if already scheduled and not finished
     bool schedule_all(gcl::Exec& e);
 
-    // Runs this task and its parents synchronously on the current thread
+    // Runs this task and its parents synchronously on the current thread. Returns true if successfully scheduled
+    // and false if already scheduled and not finished
     bool schedule_all();
 
-    // Returns true of this task is currently being scheduled
+    // Returns true if this task is currently being scheduled
     bool is_scheduled() const;
 
     // Returns true if this task has a result
@@ -141,18 +138,18 @@ public:
     // Waits for this task to finish
     void wait() const;
 
-    // Sets whether this task's parents' results should be automatically released.
+    // Sets whether this task's parents' results should be automatically released
     void set_auto_release_parents(bool auto_release);
 
-    // Sets whether this task's result should be automatically released.
+    // Sets whether this task's result should be automatically released
     void set_auto_release(bool auto_release);
 
-    // Releases this task's parents' results. Returns true if successfully released and false
-    // if currently scheduled and not finished.
+    // Releases this task's parents' results. Returns true if successfully released
+    // and false if currently scheduled and not finished
     bool release_parents();
 
-    // Releases this task's result. Returns true if successfully released and false
-    // if currently scheduled and not finished.
+    // Releases this task's result. Returns true if successfully released
+    // and false if currently scheduled and not finished
     bool release();
 
     // Returns the unique id of the task
@@ -861,12 +858,6 @@ template<typename Functor, typename... Parents>
 void BaseTask<Result>::init(Functor&& functor, Parents&&... parents)
 {
     m_impl = std::make_shared<Impl>(std::forward<Functor>(functor), std::forward<Parents>(parents)...);
-}
-
-template<typename Result>
-void BaseTask<Result>::set_thread_affinity_all(const std::size_t thread_index)
-{
-    m_impl->visit([thread_index](BaseImpl& i){ i.set_thread_affinity(static_cast<int>(thread_index)); });
 }
 
 template<typename Result>

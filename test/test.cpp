@@ -460,8 +460,4 @@ TEST_CASE("schedule_with_thread_affinity")
     REQUIRE(t.schedule_all(async));
     t.wait();
     REQUIRE(55 == *t.get());
-    t.set_thread_affinity_all(1);
-    REQUIRE(t.schedule_all(async));
-    t.wait();
-    REQUIRE(55 == *t.get());
 }
