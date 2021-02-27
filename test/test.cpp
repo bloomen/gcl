@@ -78,6 +78,49 @@ TEST_CASE("schedule_and_cancel_with_4_threads")
     test_schedule_and_cancel(4);
 }
 
+void test_schedule_and_release(const std::size_t n_threads)
+{
+    auto p1 = gcl::task([]{ return 42; });
+    auto p2 = gcl::task([]{ return 13; });
+    auto t = gcl::tie(p1, p2).then([](auto p1, auto p2){
+        return *p1.get() + *p2.get();
+    });
+    gcl::Async async{n_threads};
+    REQUIRE(t.schedule_all(async));
+    t.wait();
+    REQUIRE(p1.has_result());
+    REQUIRE(p2.has_result());
+    REQUIRE(t.has_result());
+    t.release_parents();
+    REQUIRE(!p1.has_result());
+    REQUIRE(!p2.has_result());
+    REQUIRE(t.has_result());
+    REQUIRE(t.schedule_all(async));
+    t.wait();
+    REQUIRE(p1.has_result());
+    REQUIRE(p2.has_result());
+    REQUIRE(t.has_result());
+    p2.release();
+    REQUIRE(p1.has_result());
+    REQUIRE(!p2.has_result());
+    REQUIRE(t.has_result());
+}
+
+TEST_CASE("schedule_and_release")
+{
+    test_schedule_and_release(0);
+}
+
+TEST_CASE("schedule_and_release_with_1_thread")
+{
+    test_schedule_and_release(1);
+}
+
+TEST_CASE("schedule_and_release_with_4_threads")
+{
+    test_schedule_and_release(4);
+}
+
 void test_schedule_and_auto_release(const std::size_t n_threads)
 {
     auto p1 = gcl::task([]{ return 42; });
@@ -85,11 +128,18 @@ void test_schedule_and_auto_release(const std::size_t n_threads)
     auto t = gcl::tie(p1, p2).then([](auto p1, auto p2){
         return *p1.get() + *p2.get();
     });
-    t.set_auto_release(true);
+    t.set_auto_release_parents(true);
     gcl::Async async{n_threads};
     REQUIRE(t.schedule_all(async));
     t.wait();
     REQUIRE(!p1.has_result());
+    REQUIRE(!p2.has_result());
+    REQUIRE(t.has_result());
+    REQUIRE(55 == *t.get());
+    p1.set_auto_release(false);
+    REQUIRE(t.schedule_all(async));
+    t.wait();
+    REQUIRE(p1.has_result());
     REQUIRE(!p2.has_result());
     REQUIRE(t.has_result());
     REQUIRE(55 == *t.get());
@@ -130,18 +180,6 @@ TEST_CASE("schedule_using_reference_type")
     t.wait();
     REQUIRE(42 == *p.get());
     REQUIRE(&x == p.get());
-}
-
-TEST_CASE("schedule_and_release")
-{
-    auto t = gcl::task([]{ return 42; });
-    REQUIRE(!t.has_result());
-    gcl::Async async;
-    REQUIRE(t.schedule_all(async));
-    REQUIRE(t.has_result());
-    REQUIRE(42 == *t.get());
-    REQUIRE(t.release());
-    REQUIRE(!t.has_result());
 }
 
 void test_schedule_a_wide_graph(const std::size_t n_threads,
@@ -412,6 +450,10 @@ TEST_CASE("schedule_with_thread_affinity")
     });
     t.set_thread_affinity(2);
     gcl::Async async{2};
+    REQUIRE(t.schedule_all(async));
+    t.wait();
+    REQUIRE(55 == *t.get());
+    t.set_thread_affinity_all(1);
     REQUIRE(t.schedule_all(async));
     t.wait();
     REQUIRE(55 == *t.get());

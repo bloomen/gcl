@@ -117,6 +117,10 @@ public:
     template<typename Functor>
     auto then(Functor&& functor) &&;
 
+    // Specifies a particular thread this task and its parents should run on.
+    // If not specified then they'll run on a randomly selected thread.
+    void set_thread_affinity_all(std::size_t thread_index);
+
     // Specifies a particular thread the task should run on.
     // If not specified then it'll run on a randomly selected thread.
     void set_thread_affinity(std::size_t thread_index);
@@ -137,17 +141,24 @@ public:
     // Waits for this task to finish
     void wait() const;
 
-    // Sets whether this task's result and its parents' results should be automatically released.
+    // Sets whether this task's parents' results should be automatically released.
+    void set_auto_release_parents(bool auto_release);
+
+    // Sets whether this task's result should be automatically released.
     void set_auto_release(bool auto_release);
 
-    // Releases this task's result and its parents' results. Returns true if successfully released and false
+    // Releases this task's parents' results. Returns true if successfully released and false
+    // if currently scheduled and not finished.
+    bool release_parents();
+
+    // Releases this task's result. Returns true if successfully released and false
     // if currently scheduled and not finished.
     bool release();
 
-    // Returns the id of the task (unique but changes between runs)
+    // Returns the unique id of the task
     gcl::TaskId id() const;
 
-    // Returns the edges between tasks
+    // Returns the edges between this task and all its parent tasks
     std::vector<gcl::Edge> edges() const;
 
 protected:
@@ -849,6 +860,12 @@ void BaseTask<Result>::init(Functor&& functor, Parents&&... parents)
 }
 
 template<typename Result>
+void BaseTask<Result>::set_thread_affinity_all(const std::size_t thread_index)
+{
+    m_impl->visit([thread_index](BaseImpl& i){ i.set_thread_affinity(static_cast<int>(thread_index)); });
+}
+
+template<typename Result>
 void BaseTask<Result>::set_thread_affinity(const std::size_t thread_index)
 {
     m_impl->set_thread_affinity(static_cast<int>(thread_index));
@@ -916,9 +933,27 @@ void BaseTask<Result>::wait() const
 }
 
 template<typename Result>
-void BaseTask<Result>::set_auto_release(const bool auto_release)
+void BaseTask<Result>::set_auto_release_parents(const bool auto_release)
 {
     m_impl->visit([auto_release](BaseImpl& i){ i.set_auto_release(auto_release); });
+}
+
+template<typename Result>
+void BaseTask<Result>::set_auto_release(const bool auto_release)
+{
+    m_impl->set_auto_release(auto_release);
+}
+
+template<typename Result>
+bool BaseTask<Result>::release_parents()
+{
+    if (is_scheduled())
+    {
+        return false;
+    }
+    const auto final = m_impl.get();
+    m_impl->visit([final](BaseImpl& i){ if (&i != final) { i.release(); } });
+    return true;
 }
 
 template<typename Result>
@@ -928,7 +963,7 @@ bool BaseTask<Result>::release()
     {
         return false;
     }
-    m_impl->visit([](BaseImpl& i){ i.release(); });
+    m_impl->release();
     return true;
 }
 
