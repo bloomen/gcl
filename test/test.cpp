@@ -143,6 +143,13 @@ void test_schedule_and_auto_release(const std::size_t n_threads)
     REQUIRE(!p2.has_result());
     REQUIRE(t.has_result());
     REQUIRE(55 == *t.get());
+    t.set_auto_release_parents(true);
+    t.set_auto_release(true);
+    REQUIRE(t.schedule_all(async));
+    t.wait();
+    REQUIRE(!p1.has_result());
+    REQUIRE(!p2.has_result());
+    REQUIRE(!t.has_result());
 }
 
 TEST_CASE("schedule_and_auto_release")

@@ -351,11 +351,15 @@ public:
         {
             if (parent->set_child_finished())
             {
-                parent->auto_release();
+                parent->auto_release_if();
             }
         }
         m_scheduled = false;
         m_promise.set_value();
+        if (m_children.empty())
+        {
+            auto_release_if();
+        }
     }
 
     gcl::ITask*& next() override
@@ -448,7 +452,7 @@ public:
         return ++m_children_ready == m_children.size();
     }
 
-    void auto_release()
+    void auto_release_if()
     {
         if (m_auto_release)
         {
@@ -935,7 +939,8 @@ void BaseTask<Result>::wait() const
 template<typename Result>
 void BaseTask<Result>::set_auto_release_parents(const bool auto_release)
 {
-    m_impl->visit([auto_release](BaseImpl& i){ i.set_auto_release(auto_release); });
+    const auto final = m_impl.get();
+    m_impl->visit([auto_release, final](BaseImpl& i){ if (&i != final) { i.set_auto_release(auto_release); } });
 }
 
 template<typename Result>
