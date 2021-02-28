@@ -1157,7 +1157,7 @@ struct Distance<false>
 
 // A function similar to std::for_each but returning a task for deferred,
 // possibly asynchronous execution. This function creates a graph
-// with std::distance(first, last) + 1 tasks. UB if first >= last.
+// with distance(first, last) + 1 tasks. UB if first >= last.
 // Note that `unary_op` takes an object of type T.
 template<typename T, typename UnaryOperation>
 gcl::Task<void> for_each(T first, const T last, UnaryOperation unary_op)
