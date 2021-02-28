@@ -51,27 +51,32 @@ struct AsyncConfig
 
     enum class QueueType
     {
-        Mutex,
-        Spin
+        Mutex, // Use std::mutex for work queue synchronization + std::condition_variable for wait/notify
+        Spin   // Use a spin lock for work queue synchronization + busy wait with interval sleep
     };
 
     QueueType queue_type = QueueType::Mutex;
 
     // Below are only used for QueueType::Spin
-    bool active = false; // whether we're in active mode which skips all sleeping
+    bool active = false; // Whether we're in active mode which skips interval sleeping, i.e. full busy waits
     std::chrono::microseconds processor_sleep_interval = std::chrono::microseconds{100};
     std::chrono::microseconds scheduler_sleep_interval = std::chrono::microseconds{100};
 };
 
-// Async executor for asynchronous execution
+// Async executor for asynchronous execution.
+// It works such that it runs a task as soon as the task's parents finish.
+// Async consists of a scheduler thread which manages when a task should run
+// and `n_threads` processor threads which actually run the tasks
 class Async
 {
 public:
+    // Spawns a scheduler thread and `n_threads` processor threads.
+    // Will run tasks on the current thread if `n_threads` == 0
     explicit
     Async(std::size_t n_threads = 0, gcl::AsyncConfig config = {});
     ~Async();
 
-    void set_active(bool active); // only relevant for QueueType::Spin
+    void set_active(bool active); // Only relevant for QueueType::Spin
     std::size_t n_threads() const;
     void execute(ITask& task);
 private:
