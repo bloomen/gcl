@@ -104,6 +104,8 @@ class BaseTask
 {
 public:
 
+    using result_type = Result;
+
     // Creates a child to this task (continuation)
     template<typename Functor>
     auto then(Functor&& functor) const &;
@@ -245,21 +247,12 @@ auto task(Functor&& functor)
 }
 
 // Creates a new vector of tasks of the same type
-template<typename... Result>
-auto vec(const gcl::Task<Result>&... tasks)
+template<typename... Tasks>
+auto vec(Tasks&&... tasks)
 {
     static_assert(sizeof...(tasks) > 0, "Need to provide at least one task");
-    using ResultType = std::tuple_element_t<0, std::tuple<Result...>>;
-    return gcl::Vec<ResultType>{tasks...};
-}
-
-// Creates a new vector of tasks of the same type
-template<typename... Result>
-auto vec(gcl::Task<Result>&&... tasks)
-{
-    static_assert(sizeof...(tasks) > 0, "Need to provide at least one task");
-    using ResultType = std::tuple_element_t<0, std::tuple<Result...>>;
-    return gcl::Vec<ResultType>{std::move(tasks)...};
+    using ResultType = std::tuple_element_t<0, std::tuple<typename std::remove_reference_t<Tasks>::result_type...>>;
+    return gcl::Vec<ResultType>{std::forward<Tasks>(tasks)...};
 }
 
 namespace detail
