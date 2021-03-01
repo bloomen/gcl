@@ -203,6 +203,24 @@ std::unique_ptr<TaskQueue> make_task_queue(const AsyncConfig::QueueType queue_ty
     return nullptr;
 }
 
+struct ThreadDeleter
+{
+    void operator()(std::thread* const t) const
+    {
+        if (t)
+        {
+            t->join();
+            delete t;
+        }
+    }
+};
+
+template<typename Functor, typename... Args>
+auto make_thread(Functor&& functor, Args&&... args)
+{
+    return std::unique_ptr<std::thread, ThreadDeleter>{new std::thread{std::forward<Functor>(functor), std::forward<Args>(args)...}, ThreadDeleter{}};
+}
+
 class Processor
 {
 public:
@@ -216,14 +234,13 @@ public:
         , m_completed{completed}
         , m_active{active}
         , m_scheduled{make_task_queue(m_config.queue_type, m_done, m_active, m_config.processor_sleep_interval)}
-        , m_thread{&Processor::worker, this, index}
+        , m_thread{make_thread(&Processor::worker, this, index)}
     {}
 
     ~Processor()
     {
         m_done = true;
         m_scheduled->shutdown();
-        m_thread.join();
     }
 
     void push(ITask* const task)
@@ -254,7 +271,7 @@ private:
     const std::atomic<bool>& m_active;
     std::atomic<bool> m_done{false};
     std::unique_ptr<TaskQueue> m_scheduled;
-    std::thread m_thread;
+    std::unique_ptr<std::thread, ThreadDeleter> m_thread;
 };
 
 }
@@ -272,7 +289,7 @@ struct Async::Impl
         {
             return;
         }
-        m_thread = std::thread{&Impl::worker, this};
+        m_thread = make_thread(&Impl::worker, this);
         m_processors.reserve(n_threads);
         for (std::size_t i = 0; i < n_threads; ++i)
         {
@@ -289,7 +306,6 @@ struct Async::Impl
         m_active = true;
         m_done = true;
         m_completed->shutdown();
-        m_thread.join();
     }
 
     void set_active(const bool active)
@@ -347,8 +363,8 @@ private:
     std::atomic<bool> m_done{false};
     std::unique_ptr<TaskQueue> m_completed;
     std::vector<std::unique_ptr<Processor>> m_processors;
-    std::thread m_thread;
     std::mt19937_64 m_randgen;
+    std::unique_ptr<std::thread, ThreadDeleter> m_thread;
 };
 
 Async::Async(const std::size_t n_threads, AsyncConfig config)
