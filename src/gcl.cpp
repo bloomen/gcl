@@ -37,10 +37,7 @@ class TaskQueue
 {
 public:
 
-    explicit
-    TaskQueue(const std::atomic<bool>& done)
-        : m_done{done}
-    {}
+    TaskQueue() = default;
 
     TaskQueue(const TaskQueue&) = delete;
     TaskQueue& operator=(const TaskQueue&) = delete;
@@ -51,7 +48,10 @@ public:
 
     virtual void yield() const {}
 
-    virtual std::size_t size() const = 0;
+    virtual std::size_t size() const
+    {
+        return m_size;
+    }
 
     virtual void push(ITask* const task)
     {
@@ -91,11 +91,8 @@ public:
         return task;
     }
 
-protected:
-    const std::atomic<bool>& m_done;
-    std::size_t m_size = 0;
-
 private:
+    std::size_t m_size = 0;
     ITask* m_head = nullptr;
     ITask* m_tail = nullptr;
 };
@@ -107,7 +104,7 @@ public:
 
     explicit
     TaskQueueMutex(const std::atomic<bool>& done)
-        : TaskQueue{done}
+        : m_done{done}
     {}
 
     void shutdown() override
@@ -118,7 +115,7 @@ public:
     std::size_t size() const override
     {
         std::lock_guard<std::mutex> lock{m_mutex};
-        return m_size;
+        return TaskQueue::size();
     }
 
     // multiple producer
@@ -133,11 +130,12 @@ public:
     ITask* pop() override
     {
         std::unique_lock<std::mutex> lock{m_mutex};
-        m_cv.wait(lock, [this]{ return m_size > 0 || m_done; });
+        m_cv.wait(lock, [this]{ return TaskQueue::size() > 0 || m_done; });
         return TaskQueue::pop();
     }
 
 private:
+    const std::atomic<bool>& m_done;
     mutable std::mutex m_mutex;
     std::condition_variable m_cv;
 };
@@ -149,7 +147,7 @@ public:
 
     explicit
     TaskQueueSpin(const std::atomic<bool>& done, const std::atomic<bool>& active, const std::chrono::microseconds sleep_interval)
-        : TaskQueue{done}
+        : m_done{done}
         , m_active{active}
         , m_sleep_interval{sleep_interval}
     {}
@@ -169,7 +167,7 @@ public:
     std::size_t size() const override
     {
         std::lock_guard<SpinLock> lock{m_spin};
-        return m_size;
+        return TaskQueue::size();
     }
 
     // multiple producer
@@ -187,6 +185,7 @@ public:
     }
 
 private:
+    const std::atomic<bool>& m_done;
     mutable SpinLock m_spin;
     const std::atomic<bool>& m_active;
     const std::chrono::microseconds m_sleep_interval;
