@@ -203,29 +203,43 @@ std::unique_ptr<TaskQueue> make_task_queue(const AsyncConfig::QueueType queue_ty
     return nullptr;
 }
 
-struct ThreadDeleter
+template<typename Host>
+class ThreadDeleter
 {
+public:
+    ThreadDeleter() = default;
+    explicit
+    ThreadDeleter(Host* const host)
+        : m_host{host}
+    {}
+
     void operator()(std::thread* const t) const
     {
         if (t)
         {
+            if (m_host)
+            {
+                m_host->shutdown();
+            }
             t->join();
             delete t;
         }
     }
+
+private:
+    Host* m_host = nullptr;
 };
 
-template<typename Functor, typename... Args>
-auto make_thread(Functor&& functor, Args&&... args)
+template<typename Host>
+auto make_thread(Host& host)
 {
-    return std::unique_ptr<std::thread, ThreadDeleter>{new std::thread{std::forward<Functor>(functor), std::forward<Args>(args)...}, ThreadDeleter{}};
+    return std::unique_ptr<std::thread, ThreadDeleter<Host>>{new std::thread{[&host]{ host.worker(); }}, ThreadDeleter<Host>{&host}};
 }
 
 class Processor
 {
 public:
-
-    explicit 
+    explicit
     Processor(const std::size_t index,
               const AsyncConfig& config,
               TaskQueue& completed,
@@ -233,27 +247,21 @@ public:
         : m_config{config}
         , m_completed{completed}
         , m_active{active}
+        , m_index{index}
         , m_scheduled{make_task_queue(m_config.queue_type, m_done, m_active, m_config.processor_sleep_interval)}
-        , m_thread{make_thread(&Processor::worker, this, index)}
+        , m_thread{make_thread(*this)}
     {}
-
-    ~Processor()
-    {
-        m_done = true;
-        m_scheduled->shutdown();
-    }
 
     void push(ITask* const task)
     {
         m_scheduled->push(task);
     }
 
-private:
-    void worker(const std::size_t index)
+    void worker()
     {
         if (m_config.on_processor_thread_started)
         {
-            m_config.on_processor_thread_started(index);
+            m_config.on_processor_thread_started(m_index);
         }
         while (!m_done)
         {
@@ -266,12 +274,20 @@ private:
         }
     }
 
+    void shutdown()
+    {
+        m_done = true;
+        m_scheduled->shutdown();
+    }
+
+private:
     const AsyncConfig& m_config;
     TaskQueue& m_completed;
     const std::atomic<bool>& m_active;
+    std::size_t m_index;
     std::atomic<bool> m_done{false};
     std::unique_ptr<TaskQueue> m_scheduled;
-    std::unique_ptr<std::thread, ThreadDeleter> m_thread;
+    std::unique_ptr<std::thread, ThreadDeleter<Processor>> m_thread;
 };
 
 }
@@ -289,23 +305,12 @@ struct Async::Impl
         {
             return;
         }
-        m_thread = make_thread(&Impl::worker, this);
+        m_thread = make_thread(*this);
         m_processors.reserve(n_threads);
         for (std::size_t i = 0; i < n_threads; ++i)
         {
             m_processors.emplace_back(std::make_unique<Processor>(i, m_config, *m_completed, m_active));
         }
-    }
-
-    ~Impl()
-    {
-        if (n_threads() == 0)
-        {
-            return;
-        }
-        m_active = true;
-        m_done = true;
-        m_completed->shutdown();
     }
 
     void set_active(const bool active)
@@ -334,7 +339,6 @@ struct Async::Impl
         m_processors[index]->push(&task);
     }
 
-private:
     void worker()
     {
         if (m_config.on_scheduler_thread_started)
@@ -358,13 +362,21 @@ private:
         }
     }
 
+    void shutdown()
+    {
+        m_active = true;
+        m_done = true;
+        m_completed->shutdown();
+    }
+
+private:
     AsyncConfig m_config;
     std::atomic<bool> m_active;
     std::atomic<bool> m_done{false};
     std::unique_ptr<TaskQueue> m_completed;
     std::vector<std::unique_ptr<Processor>> m_processors;
     std::mt19937_64 m_randgen;
-    std::unique_ptr<std::thread, ThreadDeleter> m_thread;
+    std::unique_ptr<std::thread, ThreadDeleter<Impl>> m_thread;
 };
 
 Async::Async(const std::size_t n_threads, AsyncConfig config)
