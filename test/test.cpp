@@ -19,8 +19,6 @@ void test_schedule(const std::size_t n_threads)
     auto p1 = gcl::task([]{ return 42; });
     auto p2 = gcl::task([]{ return 13; });
     auto t = gcl::tie(p1, p2).then([](auto p1, auto p2){
-        REQUIRE(p1.has_result());
-        REQUIRE(p2.has_result());
         return *p1.get() + *p2.get();
     });
     gcl::Async async{n_threads};
@@ -194,18 +192,12 @@ void test_schedule_a_wide_graph(const std::size_t n_threads,
                                 const bool use_schedule_overload)
 {
     std::atomic<int> x{0};
-    std::mutex m;
     auto top = gcl::task([&x]{ return x++; });
     gcl::Vec<int> tasks;
     for (int i = 0; i < 10; ++i)
     {
-        auto functor = [&x, &m](auto t)
+        auto functor = [&x](auto t)
         {
-            const bool has_result = t.has_result();
-            {
-                std::lock_guard<std::mutex> lock{m};
-                REQUIRE(has_result); // catch's assertion counter is not thread-safe
-            }
             x++;
             return *t.get();
         };
@@ -401,7 +393,7 @@ TEST_CASE("task_chaining_with_int")
 TEST_CASE("task_chaining_with_void")
 {
     int x = 0;
-    auto f = [&x](gcl::Task<void> t){ REQUIRE(t.has_result()); x++; };
+    auto f = [&x](gcl::Task<void>){ x++; };
     auto t = gcl::task([&x]{ x++; }).then(f).then(f).then(f).then(f);
     gcl::Async async;
     REQUIRE(t.schedule_all(async));
@@ -451,8 +443,6 @@ TEST_CASE("schedule_with_thread_affinity")
     auto p2 = gcl::task([]{ return 13; });
     p1.set_thread_affinity(1);
     auto t = gcl::tie(p1, p2).then([](auto p1, auto p2){
-        REQUIRE(p1.has_result());
-        REQUIRE(p2.has_result());
         return *p1.get() + *p2.get();
     });
     t.set_thread_affinity(2);
