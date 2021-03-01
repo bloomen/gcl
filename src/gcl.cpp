@@ -30,7 +30,7 @@ public:
     }
 
 private:
-    std::atomic_flag m_locked{ATOMIC_FLAG_INIT};
+    std::atomic_flag m_locked = ATOMIC_FLAG_INIT;
 };
 
 class TaskQueue
@@ -44,6 +44,8 @@ public:
 
     TaskQueue(const TaskQueue&) = delete;
     TaskQueue& operator=(const TaskQueue&) = delete;
+
+    virtual ~TaskQueue() = default;
 
     virtual void shutdown() {}
 
