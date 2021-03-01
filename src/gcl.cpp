@@ -146,9 +146,8 @@ class TaskQueueSpin : public TaskQueue
 public:
 
     explicit
-    TaskQueueSpin(const std::atomic<bool>& done, const std::atomic<bool>& active, const std::chrono::microseconds sleep_interval)
-        : m_done{done}
-        , m_active{active}
+    TaskQueueSpin(const std::atomic<bool>& active, const std::chrono::microseconds sleep_interval)
+        : m_active{active}
         , m_sleep_interval{sleep_interval}
     {}
 
@@ -185,7 +184,6 @@ public:
     }
 
 private:
-    const std::atomic<bool>& m_done;
     mutable SpinLock m_spin;
     const std::atomic<bool>& m_active;
     const std::chrono::microseconds m_sleep_interval;
@@ -196,7 +194,7 @@ std::unique_ptr<TaskQueue> make_task_queue(const AsyncConfig::QueueType queue_ty
     switch (queue_type)
     {
     case AsyncConfig::QueueType::Mutex: return std::make_unique<TaskQueueMutex>(done);
-    case AsyncConfig::QueueType::Spin: return std::make_unique<TaskQueueSpin>(done, active, sleep_interval);
+    case AsyncConfig::QueueType::Spin: return std::make_unique<TaskQueueSpin>(active, sleep_interval);
     }
     GCL_ASSERT(false);
     return nullptr;
