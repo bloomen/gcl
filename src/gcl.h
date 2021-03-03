@@ -1133,8 +1133,8 @@ struct Distance;
 template<>
 struct Distance<true>
 {
-    template<typename Number>
-    auto operator()(const Number first, const Number last) const
+    template<typename Number1, typename Number2>
+    auto operator()(const Number1 first, const Number2 last) const
     {
         GCL_ASSERT(last > first);
         return last - first;
@@ -1156,10 +1156,10 @@ struct Distance<false>
 // A function similar to std::for_each but returning a task for asynchronous execution.
 // This function creates a graph with distance(first, last) + 1 tasks. UB if first >= last.
 // Note that `unary_op` takes an object of type T.
-template<typename T, typename UnaryOperation>
-gcl::Task<void> for_each(T first, const T last, UnaryOperation unary_op)
+template<typename T, typename U, typename UnaryOperation>
+gcl::Task<void> for_each(T first, const U last, UnaryOperation unary_op)
 {
-    const auto distance = gcl::detail::Distance<std::is_arithmetic<T>::value>{}(first, last);
+    const auto distance = gcl::detail::Distance<std::is_arithmetic<U>::value>{}(first, last);
     GCL_ASSERT(distance > 0);
     gcl::Vec<void> tasks;
     tasks.reserve(static_cast<std::size_t>(distance));

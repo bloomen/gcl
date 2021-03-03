@@ -429,7 +429,7 @@ TEST_CASE("for_each_with_4_threads")
 TEST_CASE("for_each_with_counters")
 {
     std::vector<double> data{1, 2, 3, 4, 5};
-    auto t = gcl::for_each(size_t{0}, data.size(), [&data](auto i){ data[i] *= 2; });
+    auto t = gcl::for_each(0u, data.size(), [&data](auto i){ data[i] *= 2; });
     gcl::Async async;
     REQUIRE(t.schedule_all(async));
     const std::vector<double> data_exp{2, 4, 6, 8, 10};
