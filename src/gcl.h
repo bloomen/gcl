@@ -1089,7 +1089,14 @@ auto tie(Tasks&&... tasks)
 template<typename... Tasks>
 gcl::Task<void> when(const gcl::Tie<Tasks...>& tie)
 {
-    return tie.then([](auto&&... ts){ gcl::detail::for_each([](const auto& t){ t.get(); }, std::forward<decltype(ts)>(ts)...); });
+    return tie.then([](auto&&... ts){ gcl::detail::for_each([](auto&& t){ std::forward<decltype(t)>(t).get(); }, std::forward<decltype(ts)>(ts)...); });
+}
+
+// Creates a child that waits for all tasks to finish that are part of `tie`
+template<typename... Tasks>
+gcl::Task<void> when(gcl::Tie<Tasks...>&& tie)
+{
+    return std::move(tie).then([](auto&&... ts){ gcl::detail::for_each([](auto&& t){ std::forward<decltype(t)>(t).get(); }, std::forward<decltype(ts)>(ts)...); });
 }
 
 // Creates a child that waits for all tasks to finish where `tasks` can be of type `Task` and/or `Vec`
