@@ -388,11 +388,10 @@ public:
             q.emplace(this);
             while (!q.empty())
             {
-                const BaseImpl* const v = q.front();
+                const auto v = q.front();
                 q.pop();
-                for (gcl::ITask* const p : v->m_parents)
+                for (const auto w : v->m_parents)
                 {
-                    const auto w = static_cast<BaseImpl*>(p);
                     if (!w->m_visited)
                     {
                         q.emplace(w);
@@ -1060,11 +1059,6 @@ public:
     auto then(Functor&& functor) &&
     {
         return then_impl(std::forward<Functor>(functor), std::index_sequence_for<Tasks...>{});
-    }
-
-    const std::tuple<Tasks...>& tasks() const
-    {
-        return m_tasks;
     }
 
 private:
