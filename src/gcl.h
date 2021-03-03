@@ -1091,18 +1091,18 @@ auto tie(Tasks&&... tasks)
     return gcl::Tie<std::remove_reference_t<Tasks>...>{std::forward<Tasks>(tasks)...};
 }
 
-// Creates a child that waits for all tasks to finish where `tasks` can be of type `Task` and/or `Vec`
-template<typename... Tasks>
-gcl::Task<void> when(Tasks... tasks)
-{
-    return gcl::tie(std::move(tasks)...).then([](auto&&... ts){ gcl::detail::for_each([](const auto& t){ t.get(); }, std::forward<decltype(ts)>(ts)...); });
-}
-
 // Creates a child that waits for all tasks to finish that are part of `tie`
 template<typename... Tasks>
 gcl::Task<void> when(const gcl::Tie<Tasks...>& tie)
 {
     return tie.then([](auto&&... ts){ gcl::detail::for_each([](const auto& t){ t.get(); }, std::forward<decltype(ts)>(ts)...); });
+}
+
+// Creates a child that waits for all tasks to finish where `tasks` can be of type `Task` and/or `Vec`
+template<typename... Tasks>
+gcl::Task<void> when(Tasks... tasks)
+{
+    return gcl::when(gcl::tie(std::move(tasks)...));
 }
 
 // Can be used to facilitate task canceling
