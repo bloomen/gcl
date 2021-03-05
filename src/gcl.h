@@ -510,16 +510,9 @@ template<typename Result>
 class ChannelElement
 {
 public:
-    ChannelElement(const Result& value)
-        : m_value{value}
-        , m_has_value{true}
-    {}
     ChannelElement(Result&& value)
         : m_value{std::move(value)}
         , m_has_value{true}
-    {}
-    ChannelElement(const std::exception_ptr& exception)
-        : m_exception{exception}
     {}
     ChannelElement(std::exception_ptr&& exception)
         : m_exception{std::move(exception)}
@@ -587,9 +580,6 @@ public:
         : m_value{&value}
         , m_has_value{true}
     {}
-    ChannelElement(const std::exception_ptr& exception)
-        : m_exception{exception}
-    {}
     ChannelElement(std::exception_ptr&& exception)
         : m_exception{std::move(exception)}
     {}
@@ -649,9 +639,6 @@ class ChannelElement<void>
 {
 public:
     ChannelElement()
-    {}
-    ChannelElement(const std::exception_ptr& exception)
-        : m_exception{exception}
     {}
     ChannelElement(std::exception_ptr&& exception)
         : m_exception{std::move(exception)}
