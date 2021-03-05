@@ -62,8 +62,8 @@ struct AsyncConfig
     {
         bool active = false; // Whether we're in active mode which skips interval sleeping, i.e. full busy waits
         bool spin_lock_yields = true;
-        std::chrono::microseconds processor_sleep_interval = std::chrono::microseconds{100};
-        std::chrono::microseconds scheduler_sleep_interval = std::chrono::microseconds{100};
+        std::chrono::microseconds processor_sleep_interval{100};
+        std::chrono::microseconds scheduler_sleep_interval{100};
     }
     spin_config;
 };
