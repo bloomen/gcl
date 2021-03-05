@@ -58,9 +58,14 @@ struct AsyncConfig
     QueueType queue_type = QueueType::Mutex;
 
     // Below are only used for QueueType::Spin
-    bool active = false; // Whether we're in active mode which skips interval sleeping, i.e. full busy waits
-    std::chrono::microseconds processor_sleep_interval = std::chrono::microseconds{100};
-    std::chrono::microseconds scheduler_sleep_interval = std::chrono::microseconds{100};
+    struct
+    {
+        bool active = false; // Whether we're in active mode which skips interval sleeping, i.e. full busy waits
+        bool spin_lock_yields = true;
+        std::chrono::microseconds processor_sleep_interval = std::chrono::microseconds{100};
+        std::chrono::microseconds scheduler_sleep_interval = std::chrono::microseconds{100};
+    }
+    spin_config;
 };
 
 // Async executor for asynchronous execution.

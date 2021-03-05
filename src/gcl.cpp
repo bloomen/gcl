@@ -18,10 +18,20 @@ namespace
 class SpinLock
 {
 public:
+    explicit
+    SpinLock(const bool yields)
+        : m_yields{yields}
+    {}
 
     void lock() noexcept
     {
-        while (m_locked.test_and_set(std::memory_order_acquire));
+        while (m_locked.test_and_set(std::memory_order_acquire))
+        {
+            if (m_yields)
+            {
+                std::this_thread::yield();
+            }
+        }
     }
 
     void unlock() noexcept
@@ -30,6 +40,7 @@ public:
     }
 
 private:
+    const bool m_yields;
     std::atomic_flag m_locked = ATOMIC_FLAG_INIT;
 };
 
@@ -146,8 +157,9 @@ class TaskQueueSpin : public TaskQueue
 public:
 
     explicit
-    TaskQueueSpin(const std::atomic<bool>& active, const std::chrono::microseconds sleep_interval)
-        : m_active{active}
+    TaskQueueSpin(const bool yields, const std::atomic<bool>& active, const std::chrono::microseconds sleep_interval)
+        : m_spin{yields}
+        , m_active{active}
         , m_sleep_interval{sleep_interval}
     {}
 
@@ -189,12 +201,12 @@ private:
     const std::chrono::microseconds m_sleep_interval;
 };
 
-std::unique_ptr<TaskQueue> make_task_queue(const AsyncConfig::QueueType queue_type, std::atomic<bool>& done, const std::atomic<bool>& active, const std::chrono::microseconds sleep_interval)
+std::unique_ptr<TaskQueue> make_task_queue(const AsyncConfig::QueueType queue_type, std::atomic<bool>& done, const bool spin_lock_yields, const std::atomic<bool>& active, const std::chrono::microseconds sleep_interval)
 {
     switch (queue_type)
     {
     case AsyncConfig::QueueType::Mutex: return std::make_unique<TaskQueueMutex>(done);
-    case AsyncConfig::QueueType::Spin: return std::make_unique<TaskQueueSpin>(active, sleep_interval);
+    case AsyncConfig::QueueType::Spin: return std::make_unique<TaskQueueSpin>(spin_lock_yields, active, sleep_interval);
     }
     GCL_ASSERT(false);
     return nullptr;
@@ -244,7 +256,7 @@ public:
         , m_completed{completed}
         , m_active{active}
         , m_index{index}
-        , m_scheduled{make_task_queue(m_config.queue_type, m_done, m_active, m_config.processor_sleep_interval)}
+        , m_scheduled{make_task_queue(m_config.queue_type, m_done, m_config.spin_config.spin_lock_yields, m_active, m_config.spin_config.processor_sleep_interval)}
     {
         m_thread.start(*this);
     }
@@ -295,8 +307,8 @@ struct Async::Impl : public Worker
     explicit
     Impl(const std::size_t n_threads, AsyncConfig config)
         : m_config{std::move(config)}
-        , m_active{m_config.active}
-        , m_completed{make_task_queue(m_config.queue_type, m_done, m_active, m_config.scheduler_sleep_interval)}
+        , m_active{m_config.spin_config.active}
+        , m_completed{make_task_queue(m_config.queue_type, m_done, m_config.spin_config.spin_lock_yields, m_active, m_config.spin_config.scheduler_sleep_interval)}
         , m_randgen{m_config.scheduler_random_seed > 0 ? m_config.scheduler_random_seed : std::random_device{}()}
     {
         if (n_threads == 0)
