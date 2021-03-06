@@ -42,6 +42,16 @@ public:
     virtual ITask*& previous() = 0;
 };
 
+// Executor interface
+class Exec
+{
+public:
+    virtual ~Exec() = default;
+    virtual void set_active(bool active) = 0;
+    virtual std::size_t n_threads() const = 0;
+    virtual void execute(ITask& task) = 0;
+};
+
 // Config struct for the Async class
 struct AsyncConfig
 {
@@ -72,7 +82,7 @@ struct AsyncConfig
 // It works such that it runs a task as soon as the task's parents finish.
 // Async consists of a scheduler thread which manages when a task should run
 // and `n_threads` processor threads which actually run the tasks
-class Async
+class Async : public Exec
 {
 public:
     // Spawns a scheduler thread and `n_threads` processor threads.
@@ -81,9 +91,9 @@ public:
     Async(std::size_t n_threads = 0, gcl::AsyncConfig config = {});
     ~Async();
 
-    void set_active(bool active); // Only relevant for QueueType::Spin
-    std::size_t n_threads() const;
-    void execute(ITask& task);
+    void set_active(bool active) override; // Only relevant for QueueType::Spin
+    std::size_t n_threads() const override;
+    void execute(ITask& task) override;
 private:
     struct Impl;
     std::unique_ptr<Impl> m_impl;
@@ -125,7 +135,7 @@ public:
 
     // Schedules this task and its parents for execution. Returns true if successfully scheduled
     // and false if already scheduled and not finished
-    bool schedule_all(gcl::Async& async);
+    bool schedule_all(gcl::Exec& exec);
 
     // Runs this task and its parents synchronously on the current thread. Returns true if successfully scheduled
     // and false if already scheduled and not finished
@@ -864,13 +874,13 @@ void BaseTask<Result>::set_thread_affinity(const std::size_t thread_index)
 }
 
 template<typename Result>
-bool BaseTask<Result>::schedule_all(gcl::Async& async)
+bool BaseTask<Result>::schedule_all(gcl::Exec& exec)
 {
     if (is_scheduled())
     {
         return false;
     }
-    if (async.n_threads() == 0)
+    if (exec.n_threads() == 0)
     {
         return schedule_all();
     }
@@ -885,7 +895,7 @@ bool BaseTask<Result>::schedule_all(gcl::Async& async)
     });
     for (const auto root : roots)
     {
-        async.execute(*root);
+        exec.execute(*root);
     }
     return true;
 }
