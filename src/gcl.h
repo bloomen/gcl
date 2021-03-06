@@ -184,6 +184,11 @@ protected:
 
 } // detail
 
+template<typename F>
+auto task(F&&);
+template<typename... T>
+class Tie;
+
 // The task type for general result types
 template<typename Result>
 class Task : public gcl::detail::BaseTask<Result>
@@ -194,6 +199,14 @@ public:
     // Re-throws any exception thrown from running this task or any of its parents.
     const Result* get() const;
 
+private:
+    template<typename R>
+    friend class gcl::detail::BaseTask;
+    template<typename F>
+    friend auto gcl::task(F&&);
+    template<typename... T>
+    friend class gcl::Tie;
+
     template<typename Functor, typename... Parents>
     static Task create(Functor&& functor, Parents&&... parents)
     {
@@ -202,7 +215,6 @@ public:
         return task;
     }
 
-private:
     Task() = default;
 };
 
@@ -216,6 +228,14 @@ public:
     // Re-throws any exception thrown from running this task or any of its parents.
     Result* get() const;
 
+private:
+    template<typename R>
+    friend class gcl::detail::BaseTask;
+    template<typename F>
+    friend auto gcl::task(F&&);
+    template<typename... T>
+    friend class gcl::Tie;
+
     template<typename Functor, typename... Parents>
     static Task create(Functor&& functor, Parents&&... parents)
     {
@@ -224,7 +244,6 @@ public:
         return task;
     }
 
-private:
     Task() = default;
 };
 
@@ -238,6 +257,14 @@ public:
     // Re-throws any exception thrown from running this task or any of its parents.
     bool get() const;
 
+private:
+    template<typename R>
+    friend class gcl::detail::BaseTask;
+    template<typename F>
+    friend auto gcl::task(F&&);
+    template<typename... T>
+    friend class gcl::Tie;
+
     template<typename Functor, typename... Parents>
     static Task create(Functor&& functor, Parents&&... parents)
     {
@@ -246,7 +273,6 @@ public:
         return task;
     }
 
-private:
     Task() = default;
 };
 
@@ -900,7 +926,7 @@ bool BaseTask<Result>::schedule_all(gcl::Exec& exec)
     return true;
 }
 
-template<typename Result> 
+template<typename Result>
 bool BaseTask<Result>::schedule_all()
 {
     if (is_scheduled())
@@ -916,7 +942,7 @@ bool BaseTask<Result>::schedule_all()
     return true;
 }
 
-template<typename Result> 
+template<typename Result>
 bool BaseTask<Result>::is_scheduled() const
 {
     return m_impl->is_scheduled();
