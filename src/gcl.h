@@ -1058,22 +1058,15 @@ bool Task<void>::get() const
     return false;
 }
 
+template<typename... T>
+auto tie(T&&...);
+
 // Ties tasks together which can be of type `Task` and/or `Vec`
 template<typename... Tasks>
 class Tie
 {
 public:
     static_assert(sizeof...(Tasks) > 0, "Need to provide at least one task");
-
-    explicit
-    Tie(const Tasks&... tasks)
-        : m_tasks{std::make_tuple(tasks...)}
-    {}
-
-    explicit
-    Tie(Tasks&&... tasks)
-        : m_tasks{std::make_tuple(std::move(tasks)...)}
-    {}
 
     // Creates a child to all tied tasks (continuation)
     template<typename Functor>
@@ -1090,6 +1083,18 @@ public:
     }
 
 private:
+    template<typename... T>
+    friend auto tie(T&&...);
+
+    explicit
+    Tie(const Tasks&... tasks)
+        : m_tasks{std::make_tuple(tasks...)}
+    {}
+
+    explicit
+    Tie(Tasks&&... tasks)
+        : m_tasks{std::make_tuple(std::move(tasks)...)}
+    {}
 
     template<typename Functor, std::size_t... Is>
     auto then_impl(Functor&& functor, std::index_sequence<Is...>) const &
