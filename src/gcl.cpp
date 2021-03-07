@@ -6,7 +6,6 @@
 #include "gcl.h"
 
 #include <condition_variable>
-#include <mutex>
 #include <random>
 
 namespace gcl
@@ -346,6 +345,7 @@ struct Async::Impl : public Worker
             std::uniform_int_distribution<std::size_t> dist{0u, m_processors.size() - 1u};
             index = dist(m_randgen);
         }
+        task.prepare();
         m_processors[index]->push(&task);
     }
 

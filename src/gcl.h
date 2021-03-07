@@ -11,6 +11,7 @@
 #include <functional>
 #include <future>
 #include <memory>
+#include <mutex>
 #include <queue>
 #include <thread>
 #include <tuple>
@@ -33,6 +34,7 @@ class ITask
 {
 public:
     virtual ~ITask() = default;
+    virtual void prepare() = 0;
     virtual void call() = 0;
     virtual int thread_affinity() const = 0;
     virtual const std::vector<ITask*>& children() const = 0;
@@ -109,6 +111,9 @@ struct Edge
     gcl::TaskId child;
 };
 
+template<typename... T>
+void schedule(gcl::Exec&, T&&...);
+
 namespace detail
 {
 
@@ -129,6 +134,12 @@ public:
     template<typename Functor>
     auto then(Functor&& functor) &&;
 
+    // Once this task is ready it can be waited on
+    void make_ready();
+
+    // Returns whether the task is ready
+    bool is_ready() const;
+
     // Specifies a particular thread the task should run on.
     // If not specified then it'll run on a randomly selected thread
     void set_thread_affinity(std::size_t thread_index);
@@ -148,7 +159,7 @@ public:
     bool has_result() const;
 
     // Waits for this task to finish
-    void wait() const;
+    bool wait() const;
 
     // Sets whether this task's parents' results should be automatically released
     void set_auto_release_parents(bool auto_release);
@@ -172,6 +183,8 @@ public:
 
 protected:
     friend struct CollectParents;
+    template<typename... T>
+    friend void gcl::schedule(gcl::Exec&, T&&...);
 
     BaseTask() = default;
 
@@ -298,6 +311,13 @@ void for_each_impl(const F& f, const gcl::Task<Result>& t, Tasks&&... tasks)
 }
 
 template<typename F, typename Result, typename... Tasks>
+void for_each_impl(const F& f, gcl::Task<Result>& t, Tasks&&... tasks)
+{
+    f(t);
+    for_each_impl(f, std::forward<Tasks>(tasks)...);
+}
+
+template<typename F, typename Result, typename... Tasks>
 void for_each_impl(const F& f, gcl::Task<Result>&& t, Tasks&&... tasks)
 {
     f(std::move(t));
@@ -308,6 +328,13 @@ template<typename F, typename Result, typename... Tasks>
 void for_each_impl(const F& f, const gcl::Vec<Result>& ts, Tasks&&... tasks)
 {
     for (const gcl::Task<Result>& t : ts) f(t);
+    for_each_impl(f, std::forward<Tasks>(tasks)...);
+}
+
+template<typename F, typename Result, typename... Tasks>
+void for_each_impl(const F& f, gcl::Vec<Result>& ts, Tasks&&... tasks)
+{
+    for (gcl::Task<Result>& t : ts) f(t);
     for_each_impl(f, std::forward<Tasks>(tasks)...);
 }
 
@@ -379,8 +406,13 @@ public:
         return m_previous;
     }
 
-    virtual void prepare() = 0;
     virtual void release() = 0;
+
+    bool is_prepared() const
+    {
+        std::lock_guard<std::mutex> lock{m_prepare_mutex};
+        return m_future.valid();
+    }
 
     void set_thread_affinity(const int affinity)
     {
@@ -491,6 +523,7 @@ public:
 protected:
     BaseImpl() = default;
 
+    mutable std::mutex m_prepare_mutex;
     std::promise<void> m_promise;
     std::future<void> m_future;
     int m_thread_affinity = -1;
@@ -806,11 +839,15 @@ struct BaseTask<Result>::Impl : BaseImpl
     {
         gcl::detail::for_each(gcl::detail::CollectParents{this}, parents...);
         m_binding = std::make_unique<gcl::detail::BindingImpl<Result, Functor, Parents...>>(std::forward<Functor>(functor), std::forward<Parents>(parents)...);
-        m_future = m_promise.get_future();
     }
 
     void prepare() override
     {
+        std::lock_guard<std::mutex> lock{m_prepare_mutex};
+        if (m_scheduled)
+        {
+            return;
+        }
         m_parents_ready = 0;
         m_children_ready = 0;
         m_promise = {};
@@ -861,6 +898,18 @@ auto BaseTask<Result>::then(Functor&& functor) &&
 }
 
 template<typename Result>
+void BaseTask<Result>::make_ready()
+{
+    m_impl->prepare();
+}
+
+template<typename Result>
+bool BaseTask<Result>::is_ready() const
+{
+    return m_impl->is_prepared();
+}
+
+template<typename Result>
 template<typename Functor, typename... Parents>
 void BaseTask<Result>::init(Functor&& functor, Parents&&... parents)
 {
@@ -884,19 +933,13 @@ bool BaseTask<Result>::schedule_all(gcl::Exec& exec)
     {
         return schedule_all();
     }
-    std::vector<gcl::ITask*> roots;
-    m_impl->visit([&roots](BaseImpl& i)
+    m_impl->visit([&exec](BaseImpl& i)
     {
-        i.prepare();
         if (i.parents().empty())
         {
-            roots.emplace_back(&i);
+            exec.execute(i);
         }
     });
-    for (const auto root : roots)
-    {
-        exec.execute(*root);
-    }
     return true;
 }
 
@@ -929,9 +972,14 @@ bool BaseTask<Result>::has_result() const
 }
 
 template<typename Result>
-void BaseTask<Result>::wait() const
+bool BaseTask<Result>::wait() const
 {
+    if (!m_impl->is_prepared())
+    {
+        return false;
+    }
     m_impl->wait();
+    return true;
 }
 
 template<typename Result>
@@ -1106,6 +1154,18 @@ template<typename... Tasks>
 gcl::Task<void> when(Tasks... tasks)
 {
     return gcl::when(gcl::tie(std::move(tasks)...));
+}
+
+template<typename... Tasks>
+void schedule(gcl::Exec& exec, Tasks&&... roots)
+{
+    gcl::detail::for_each([&exec](auto&& t){ GCL_ASSERT(t.m_impl->parents().empty()); exec.execute(*t.m_impl); }, std::forward<Tasks>(roots)...);
+}
+
+template<typename... Tasks>
+void wait(Tasks&&... tasks)
+{
+    gcl::detail::for_each([](auto&& t){ t.make_ready(); t.wait(); }, std::forward<Tasks>(tasks)...);
 }
 
 // Can be used to facilitate task canceling
