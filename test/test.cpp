@@ -13,7 +13,7 @@ bool operator==(const Edge& lhs, const Edge& rhs)
 }
 
 }
-
+/*
 void test_schedule(const std::size_t n_threads)
 {
     auto p1 = gcl::task([]{ return 42; });
@@ -447,20 +447,35 @@ TEST_CASE("schedule_with_thread_affinity")
     });
     t.set_thread_affinity(2);
     gcl::Async async{2};
-    REQUIRE(t.schedule_all(async));
+    t.schedule_all(async);
     gcl::wait(t);
     REQUIRE(55 == *t.get());
 }
-
-TEST_CASE("schedule_roots")
+*/
+void test_schedule_roots(const std::size_t n_threads)
 {
     auto p1 = gcl::task([]{ return 42; });
     auto p2 = gcl::task([]{ return 13; });
     auto t = gcl::tie(p1, p2).then([](auto p1, auto p2){
         return *p1.get() + *p2.get();
     });
-    gcl::Async async{2};
+    gcl::Async async{n_threads};
     gcl::schedule(async, p1, p2);
     gcl::wait(t);
     REQUIRE(55 == *t.get());
+}
+
+TEST_CASE("schedule_roots")
+{
+//    test_schedule_roots(0);
+}
+
+TEST_CASE("schedule_roots_with_1_thread")
+{
+    test_schedule_roots(1);
+}
+
+TEST_CASE("schedule_roots_with_4_threads")
+{
+    test_schedule_roots(4);
 }

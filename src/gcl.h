@@ -134,9 +134,6 @@ public:
     template<typename Functor>
     auto then(Functor&& functor) &&;
 
-    // Once this task is ready it can be waited on
-    void make_ready();
-
     // Returns whether the task is ready
     bool is_ready() const;
 
@@ -146,11 +143,11 @@ public:
 
     // Schedules this task and its parents for execution. Returns true if successfully scheduled
     // and false if already scheduled and not finished
-    bool schedule_all(gcl::Exec& exec);
+    void schedule_all(gcl::Exec& exec);
 
     // Runs this task and its parents synchronously on the current thread. Returns true if successfully scheduled
     // and false if already scheduled and not finished
-    bool schedule_all();
+    void schedule_all();
 
     // Returns true if this task is currently being scheduled
     bool is_scheduled() const;
@@ -203,6 +200,9 @@ class Task : public gcl::detail::BaseTask<Result>
 {
 public:
 
+    // Once this task is ready it can be waited on
+    Task make_ready();
+
     // Returns the task's result if the task finished (has_result() == true), null otherwise.
     // Re-throws any exception thrown from running this task or any of its parents.
     const Result* get() const;
@@ -225,6 +225,9 @@ class Task<Result&> : public gcl::detail::BaseTask<Result&>
 {
 public:
 
+    // Once this task is ready it can be waited on
+    Task make_ready();
+
     // Returns the task's result if the task finished (has_result() == true), null otherwise.
     // Re-throws any exception thrown from running this task or any of its parents.
     Result* get() const;
@@ -246,6 +249,9 @@ template<>
 class Task<void> : public gcl::detail::BaseTask<void>
 {
 public:
+
+    // Once this task is ready it can be waited on
+    Task make_ready();
 
     // Returns true if the task finished (has_result() == true), false otherwise.
     // Re-throws any exception thrown from running this task or any of its parents.
@@ -848,11 +854,11 @@ struct BaseTask<Result>::Impl : BaseImpl
         {
             return;
         }
+        m_scheduled = true;
         m_parents_ready = 0;
         m_children_ready = 0;
         m_promise = {};
         m_future = m_promise.get_future();
-        m_scheduled = true;
         m_channel.reset();
         m_channel.set_future(m_future);
     }
@@ -898,12 +904,6 @@ auto BaseTask<Result>::then(Functor&& functor) &&
 }
 
 template<typename Result>
-void BaseTask<Result>::make_ready()
-{
-    m_impl->prepare();
-}
-
-template<typename Result>
 bool BaseTask<Result>::is_ready() const
 {
     return m_impl->is_prepared();
@@ -923,12 +923,8 @@ void BaseTask<Result>::set_thread_affinity(const std::size_t thread_index)
 }
 
 template<typename Result>
-bool BaseTask<Result>::schedule_all(gcl::Exec& exec)
+void BaseTask<Result>::schedule_all(gcl::Exec& exec)
 {
-    if (is_scheduled())
-    {
-        return false;
-    }
     if (exec.n_threads() == 0)
     {
         return schedule_all();
@@ -940,23 +936,17 @@ bool BaseTask<Result>::schedule_all(gcl::Exec& exec)
             exec.execute(i);
         }
     });
-    return true;
 }
 
 template<typename Result>
-bool BaseTask<Result>::schedule_all()
+void BaseTask<Result>::schedule_all()
 {
-    if (is_scheduled())
-    {
-        return false;
-    }
     m_impl->visit([](BaseImpl& i)
     {
         i.prepare();
         i.call();
         i.set_finished();
     });
-    return true;
 }
 
 template<typename Result>
@@ -998,10 +988,6 @@ void BaseTask<Result>::set_auto_release(const bool auto_release)
 template<typename Result>
 bool BaseTask<Result>::release_parents()
 {
-    if (is_scheduled())
-    {
-        return false;
-    }
     const auto final = m_impl.get();
     m_impl->visit([final](BaseImpl& i){ if (&i != final) { i.release(); } });
     return true;
@@ -1010,10 +996,6 @@ bool BaseTask<Result>::release_parents()
 template<typename Result>
 bool BaseTask<Result>::release()
 {
-    if (is_scheduled())
-    {
-        return false;
-    }
     m_impl->release();
     return true;
 }
@@ -1033,6 +1015,13 @@ std::vector<gcl::Edge> BaseTask<Result>::edges() const
 } // detail
 
 template<typename Result>
+Task<Result> Task<Result>::make_ready()
+{
+    this->m_impl->prepare();
+    return *this;
+}
+
+template<typename Result>
 const Result* Task<Result>::get() const
 {
     if (const auto element = this->m_impl->channel_element())
@@ -1050,6 +1039,13 @@ const Result* Task<Result>::get() const
 }
 
 template<typename Result>
+Task<Result&> Task<Result&>::make_ready()
+{
+    this->m_impl->prepare();
+    return *this;
+}
+
+template<typename Result>
 Result* Task<Result&>::get() const
 {
     if (const auto element = this->m_impl->channel_element())
@@ -1064,6 +1060,13 @@ Result* Task<Result&>::get() const
         }
     }
     return nullptr;
+}
+
+inline
+Task<void> Task<void>::make_ready()
+{
+    this->m_impl->prepare();
+    return *this;
 }
 
 inline
@@ -1165,7 +1168,7 @@ void schedule(gcl::Exec& exec, Tasks&&... roots)
 template<typename... Tasks>
 void wait(Tasks&&... tasks)
 {
-    gcl::detail::for_each([](auto&& t){ t.make_ready(); t.wait(); }, std::forward<Tasks>(tasks)...);
+    gcl::detail::for_each([](auto&& t){ t.make_ready().wait(); }, std::forward<Tasks>(tasks)...);
 }
 
 // Can be used to facilitate task canceling
