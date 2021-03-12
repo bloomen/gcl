@@ -62,7 +62,7 @@ struct AsyncConfig
     enum class QueueType
     {
         Mutex, // Use std::mutex for work queue synchronization + std::condition_variable for wait/notify
-        Spin   // Use a spin lock for work queue synchronization + busy wait with interval sleep
+        Spin   // Use a spin lock for work queue synchronization + busy wait with optional interval sleep
     };
 
     QueueType queue_type = QueueType::Mutex;
@@ -1108,7 +1108,7 @@ gcl::Task<void> when(Tasks... tasks)
     return gcl::when(gcl::tie(std::move(tasks)...));
 }
 
-// Can be used to facilitate task canceling
+// Used to facilitate task canceling
 class CancelToken
 {
 public:
@@ -1157,7 +1157,7 @@ struct Distance<false>
 }
 
 // A function similar to std::for_each but returning a task for asynchronous execution.
-// This function creates a graph with distance(first, last) tasks. UB if first > last.
+// This function creates a graph with distance(first, last) + 1 tasks. UB if first > last.
 // Note that `unary_op` takes an object of type T.
 template<typename T, typename U, typename UnaryOperation>
 gcl::Task<void> for_each(T first, const U last, UnaryOperation unary_op)
@@ -1165,13 +1165,10 @@ gcl::Task<void> for_each(T first, const U last, UnaryOperation unary_op)
     const auto distance = gcl::detail::Distance<std::is_arithmetic<U>::value>{}(first, last);
     GCL_ASSERT(distance >= 0);
     gcl::Vec<void> tasks;
-    if (distance > 0)
+    tasks.reserve(static_cast<std::size_t>(distance));
+    for (; first != last; ++first)
     {
-        tasks.reserve(static_cast<std::size_t>(distance));
-        for (; first != last; ++first)
-        {
-            tasks.emplace_back(gcl::task([unary_op, first]{ unary_op(first); }));
-        }
+        tasks.emplace_back(gcl::task([unary_op, first]{ unary_op(first); }));
     }
     return gcl::when(std::move(tasks));
 }
