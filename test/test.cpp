@@ -399,14 +399,14 @@ TEST_CASE("task_chaining_with_void")
     REQUIRE(t.schedule_all(async));
     REQUIRE(5 == x);
 }
-
+*/
 void test_for_each(const std::size_t n_threads)
 {
     std::vector<double> data{1, 2, 3, 4, 5};
-    auto t = gcl::for_each(data.begin(), data.end(), [](auto it){ *it *= 2; });
+    auto tasks = gcl::for_each(data.begin(), data.end(), [](auto it){ *it *= 2; });
     gcl::Async async{n_threads};
-    REQUIRE(t.schedule_all(async));
-    t.wait();
+    gcl::schedule(async, tasks);
+    gcl::wait(tasks);
     const std::vector<double> data_exp{2, 4, 6, 8, 10};
     REQUIRE(data_exp == data);
 }
@@ -431,8 +431,20 @@ TEST_CASE("for_each_with_counters")
     std::vector<double> data{1, 2, 3, 4, 5};
     auto t = gcl::for_each(0u, data.size(), [&data](auto i){ data[i] *= 2; });
     gcl::Async async;
-    REQUIRE(t.schedule_all(async));
+    gcl::schedule(async, t);
+    gcl::wait(t);
     const std::vector<double> data_exp{2, 4, 6, 8, 10};
+    REQUIRE(data_exp == data);
+}
+
+TEST_CASE("for_each_with_empty_range")
+{
+    std::vector<double> data;
+    auto tasks = gcl::for_each(data.begin(), data.end(), [](auto it){ *it *= 2; });
+    gcl::Async async{2};
+    gcl::schedule(async, tasks);
+    gcl::wait(tasks);
+    const std::vector<double> data_exp;
     REQUIRE(data_exp == data);
 }
 
@@ -444,21 +456,21 @@ TEST_CASE("schedule_with_thread_affinity")
     p1.set_thread_affinity(1);
     auto t = gcl::tie(p1, p2).then([](auto p1, auto p2){
         return *p1.get() + *p2.get();
-    });
+    }).make_ready();
     t.set_thread_affinity(2);
     gcl::Async async{2};
-    t.schedule_all(async);
+    gcl::schedule(async, p1, p2);
     gcl::wait(t);
     REQUIRE(55 == *t.get());
 }
-*/
+
 void test_schedule_roots(const std::size_t n_threads)
 {
     auto p1 = gcl::task([]{ return 42; });
     auto p2 = gcl::task([]{ return 13; });
     auto t = gcl::tie(p1, p2).then([](auto p1, auto p2){
         return *p1.get() + *p2.get();
-    });
+    }).make_ready();
     gcl::Async async{n_threads};
     gcl::schedule(async, p1, p2);
     gcl::wait(t);
@@ -467,7 +479,7 @@ void test_schedule_roots(const std::size_t n_threads)
 
 TEST_CASE("schedule_roots")
 {
-//    test_schedule_roots(0);
+    test_schedule_roots(0);
 }
 
 TEST_CASE("schedule_roots_with_1_thread")

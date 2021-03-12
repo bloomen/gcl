@@ -464,6 +464,35 @@ public:
         }
     }
 
+    template<typename Visitor>
+    void visit_children(const Visitor& visitor)
+    {
+        std::vector<BaseImpl*> tasks;
+        tasks.emplace_back(this);
+        std::queue<BaseImpl*> q;
+        q.emplace(this);
+        while (!q.empty())
+        {
+            const auto v = q.front();
+            q.pop();
+            for (const auto c : v->m_children)
+            {
+                const auto w = static_cast<BaseImpl*>(c);
+                if (!w->m_visited)
+                {
+                    q.emplace(w);
+                    visitor(*w);
+                    w->m_visited = true;
+                    tasks.emplace_back(w);
+                }
+            }
+        }
+        for (const auto task : tasks)
+        {
+            task->m_visited = false;
+        }
+    }
+
     void wait() const
     {
         m_future.wait();
@@ -481,10 +510,22 @@ public:
         m_task_cache.reset();
     }
 
+    void remove_child(BaseImpl& child)
+    {
+        m_children.erase(std::remove(m_children.begin(), m_children.end(), &child), m_children.end());
+        m_task_cache.reset();
+    }
+
     void add_parent(BaseImpl& parent)
     {
         m_parents.emplace_back(&parent);
         parent.add_child(*this);
+    }
+
+    void remove_parent(BaseImpl& parent)
+    {
+        m_parents.erase(std::remove(m_parents.begin(), m_parents.end(), &parent), m_parents.end());
+        parent.remove_child(*this);
     }
 
     // Called from scheduler thread
@@ -1162,16 +1203,39 @@ gcl::Task<void> when(Tasks... tasks)
 template<typename... Tasks>
 void schedule(gcl::Exec& exec, Tasks&&... roots)
 {
-    gcl::detail::for_each([&exec](auto&& t){ GCL_ASSERT(t.m_impl->parents().empty()); exec.execute(*t.m_impl); }, std::forward<Tasks>(roots)...);
+    if (exec.n_threads() == 0)
+    {
+        auto top = gcl::task([]{});
+        gcl::detail::for_each([&top](auto&& t){ GCL_ASSERT(t.m_impl->parents().empty()); t.m_impl->add_parent(*top.m_impl); }, roots...);
+        std::vector<gcl::detail::BaseImpl*> tasks;
+        top.m_impl->visit_children([&top, &tasks](auto& i)
+        {
+            if (&i != top.m_impl.get())
+            {
+                tasks.emplace_back(&i);
+            }
+        });
+        gcl::detail::for_each([&top](auto&& t){ t.m_impl->remove_parent(*top.m_impl); }, roots...);
+        for (const auto task : tasks)
+        {
+            task->prepare();
+            task->call();
+            task->set_finished();
+        }
+    }
+    else
+    {
+        gcl::detail::for_each([&exec](auto&& t){ GCL_ASSERT(t.m_impl->parents().empty()); exec.execute(*t.m_impl); }, roots...);
+    }
 }
 
 template<typename... Tasks>
 void wait(Tasks&&... tasks)
 {
-    gcl::detail::for_each([](auto&& t){ t.make_ready().wait(); }, std::forward<Tasks>(tasks)...);
+    gcl::detail::for_each([](auto&& t){ t.wait(); }, tasks...);
 }
 
-// Can be used to facilitate task canceling
+// Used to facilitate task canceling
 class CancelToken
 {
 public:
@@ -1220,20 +1284,24 @@ struct Distance<false>
 }
 
 // A function similar to std::for_each but returning a task for asynchronous execution.
-// This function creates a graph with distance(first, last) + 1 tasks. UB if first >= last.
+// This function creates a graph with distance(first, last) tasks. UB if first >= last.
 // Note that `unary_op` takes an object of type T.
 template<typename T, typename U, typename UnaryOperation>
-gcl::Task<void> for_each(T first, const U last, UnaryOperation unary_op)
+gcl::Vec<void> for_each(T first, const U last, UnaryOperation unary_op)
 {
     const auto distance = gcl::detail::Distance<std::is_arithmetic<U>::value>{}(first, last);
-    GCL_ASSERT(distance > 0);
+    GCL_ASSERT(distance >= 0);
     gcl::Vec<void> tasks;
+    if (distance == 0) 
+    {
+        return tasks;
+    }
     tasks.reserve(static_cast<std::size_t>(distance));
     for (; first != last; ++first)
     {
-        tasks.push_back(gcl::task([unary_op, first]{ unary_op(first); }));
+        tasks.emplace_back(gcl::task([unary_op, first]{ unary_op(first); }));
     }
-    return gcl::when(tasks);
+    return tasks;
 }
 
 } // gcl
