@@ -1157,20 +1157,23 @@ struct Distance<false>
 }
 
 // A function similar to std::for_each but returning a task for asynchronous execution.
-// This function creates a graph with distance(first, last) + 1 tasks. UB if first >= last.
+// This function creates a graph with distance(first, last) tasks. UB if first > last.
 // Note that `unary_op` takes an object of type T.
 template<typename T, typename U, typename UnaryOperation>
 gcl::Task<void> for_each(T first, const U last, UnaryOperation unary_op)
 {
     const auto distance = gcl::detail::Distance<std::is_arithmetic<U>::value>{}(first, last);
-    GCL_ASSERT(distance > 0);
+    GCL_ASSERT(distance >= 0);
     gcl::Vec<void> tasks;
-    tasks.reserve(static_cast<std::size_t>(distance));
-    for (; first != last; ++first)
+    if (distance > 0)
     {
-        tasks.push_back(gcl::task([unary_op, first]{ unary_op(first); }));
+        tasks.reserve(static_cast<std::size_t>(distance));
+        for (; first != last; ++first)
+        {
+            tasks.emplace_back(gcl::task([unary_op, first]{ unary_op(first); }));
+        }
     }
-    return gcl::when(tasks);
+    return gcl::when(std::move(tasks));
 }
 
 } // gcl

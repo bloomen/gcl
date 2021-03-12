@@ -436,6 +436,17 @@ TEST_CASE("for_each_with_counters")
     REQUIRE(data_exp == data);
 }
 
+TEST_CASE("for_each_with_empty_range")
+{
+    std::vector<double> data;
+    auto t = gcl::for_each(data.begin(), data.end(), [](auto it){ *it *= 2; });
+    gcl::Async async{2};
+    REQUIRE(t.schedule_all(async));
+    t.wait();
+    const std::vector<double> data_exp;
+    REQUIRE(data_exp == data);
+}
+
 TEST_CASE("schedule_with_thread_affinity")
 {
     auto p1 = gcl::task([]{ return 42; });
