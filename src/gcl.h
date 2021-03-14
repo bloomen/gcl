@@ -1139,6 +1139,7 @@ struct Distance<true>
     template<typename Number1, typename Number2>
     auto operator()(const Number1 first, const Number2 last) const
     {
+        static_assert(std::is_integral<Number1>::value && std::is_integral<Number2>::value, "Number type must be integral");
         GCL_ASSERT(last >= first);
         return last - first;
     }
