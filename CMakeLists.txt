@@ -1,8 +1,7 @@
 cmake_minimum_required(VERSION 3.0)
 project(gcl)
-enable_testing()
 
-include_directories(src)
+option(build_tests "Build tests." OFF)
 
 if (MSVC)
     add_compile_options(/std:c++14 /W4 /bigobj /EHsc /wd4503 /wd4996 /wd4702 /wd4100 /wd4706)
@@ -24,6 +23,10 @@ endif()
 set_target_properties(gcl PROPERTIES PUBLIC_HEADER src/gcl.h)
 install(TARGETS gcl ARCHIVE DESTINATION lib LIBRARY DESTINATION lib PUBLIC_HEADER DESTINATION include)
 
-add_executable(gcl_test src/gcl.h test/catch.hpp test/test.cpp)
-target_link_libraries(gcl_test gcl)
-add_test(gcl_test gcl_test --use-colour no)
+if (build_tests)
+    enable_testing()
+    include_directories(src)
+    add_executable(gcl_test src/gcl.h test/catch.hpp test/test.cpp)
+    target_link_libraries(gcl_test gcl)
+    add_test(gcl_test gcl_test --use-colour no)
+endif()
