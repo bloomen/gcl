@@ -4,12 +4,6 @@ enable_testing()
 
 include_directories(src)
 
-find_package(Threads)
-
-add_library(gcl src/gcl.h src/gcl.cpp)
-set_target_properties(gcl PROPERTIES PUBLIC_HEADER src/gcl.h)
-install(TARGETS gcl ARCHIVE DESTINATION lib LIBRARY DESTINATION lib PUBLIC_HEADER DESTINATION include)
-
 if (MSVC)
     add_compile_options(/std:c++14 /W4 /bigobj /EHsc /wd4503 /wd4996 /wd4702 /wd4100 /wd4706)
 else()
@@ -17,8 +11,18 @@ else()
     if (CMAKE_COMPILER_IS_GNUCC)
         add_compile_options(-pthread)
     endif()
+endif()
+
+find_package(Threads)
+
+add_library(gcl src/gcl.h src/gcl.cpp)
+if (MSVC)
+else()
     target_link_libraries(gcl ${CMAKE_THREAD_LIBS_INIT})
 endif()
+
+set_target_properties(gcl PROPERTIES PUBLIC_HEADER src/gcl.h)
+install(TARGETS gcl ARCHIVE DESTINATION lib LIBRARY DESTINATION lib PUBLIC_HEADER DESTINATION include)
 
 add_executable(gcl_test src/gcl.h test/catch.hpp test/test.cpp)
 target_link_libraries(gcl_test gcl)
