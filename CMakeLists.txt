@@ -14,7 +14,7 @@ endif()
 
 find_package(Threads)
 
-add_library(gcl src/gcl.h src/gcl.cpp)
+add_library(gcl include/gcl.h src/gcl.cpp)
 if (MSVC)
 else()
     target_link_libraries(gcl ${CMAKE_THREAD_LIBS_INIT})
@@ -25,8 +25,8 @@ install(TARGETS gcl ARCHIVE DESTINATION lib LIBRARY DESTINATION lib PUBLIC_HEADE
 
 if (gcl_build_tests)
     enable_testing()
-    include_directories(src)
-    add_executable(gcl_test src/gcl.h test/catch.hpp test/test.cpp)
+    include_directories(include)
+    add_executable(gcl_test include/gcl.h test/catch.hpp test/test.cpp)
     target_link_libraries(gcl_test gcl)
     add_test(gcl_test gcl_test --use-colour no)
 endif()
