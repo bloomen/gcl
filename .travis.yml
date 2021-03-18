@@ -15,7 +15,7 @@ matrix:
 
 script:
     - mkdir build && cd build
-    - cmake -DCMAKE_BUILD_TYPE=$CONFIGURATION --Dgcl_build_tests=ON ..
+    - cmake -DCMAKE_BUILD_TYPE=$CONFIGURATION -Dgcl_build_tests=ON ..
     - cmake --build . -j 4
     - ctest --verbose
 
