@@ -3,7 +3,7 @@
 // Author: Christian Blume
 // License: MIT http://www.opensource.org/licenses/mit-license.php
 
-#include "gcl.h"
+#include <gcl.h>
 
 #include <condition_variable>
 #include <mutex>
