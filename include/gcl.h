@@ -33,13 +33,27 @@ class ITask
 {
 public:
     virtual ~ITask() = default;
-    virtual void call() = 0;
-    virtual int thread_affinity() const = 0;
-    virtual const std::vector<ITask*>& children() const = 0;
-    virtual bool set_parent_finished() = 0;
-    virtual void set_finished() = 0;
-    virtual ITask*& next() = 0;
-    virtual ITask*& previous() = 0;
+
+    virtual void
+    call() = 0;
+
+    virtual int
+    thread_affinity() const = 0;
+
+    virtual const std::vector<ITask*>&
+    children() const = 0;
+
+    virtual bool
+    set_parent_finished() = 0;
+
+    virtual bool
+    set_finished() = 0;
+
+    virtual ITask*&
+    next() = 0;
+
+    virtual ITask*&
+    previous() = 0;
 };
 
 // Executor interface
@@ -47,22 +61,30 @@ class Exec
 {
 public:
     virtual ~Exec() = default;
-    virtual void set_active(bool active) = 0;
-    virtual std::size_t n_threads() const = 0;
-    virtual void execute(ITask& task) = 0;
+
+    virtual void
+    set_active(bool active) = 0;
+
+    virtual std::size_t
+    n_threads() const = 0;
+
+    virtual void
+    execute(ITask& task) = 0;
 };
 
 // Config struct for the Async class
 struct AsyncConfig
 {
-    std::uint_fast64_t scheduler_random_seed = 0; // to select a random processor for a new task to run
+    std::uint_fast64_t scheduler_random_seed =
+        0; // to select a random processor for a new task to run
     std::function<void(std::size_t thread_index)> on_processor_thread_started;
     std::function<void()> on_scheduler_thread_started;
 
     enum class QueueType
     {
         Mutex, // Use std::mutex for work queue synchronization + std::condition_variable for wait/notify
-        Spin   // Use a spin lock for work queue synchronization + busy wait with optional interval sleep
+        Spin // Use a spin lock for work queue synchronization + busy wait with
+             // optional interval sleep
     };
 
     QueueType queue_type = QueueType::Mutex;
@@ -70,12 +92,12 @@ struct AsyncConfig
     // Below are only used for QueueType::Spin
     struct
     {
-        bool active = false; // Whether we're in active mode which skips interval sleeping, i.e. full busy waits
+        bool active = false; // Whether we're in active mode which skips
+                             // interval sleeping, i.e. full busy waits
         bool spin_lock_yields = true;
         std::chrono::microseconds processor_sleep_interval{100};
         std::chrono::microseconds scheduler_sleep_interval{100};
-    }
-    spin_config;
+    } spin_config;
 };
 
 // Async executor for asynchronous execution.
@@ -87,13 +109,18 @@ class Async : public Exec
 public:
     // Spawns a scheduler thread and `n_threads` processor threads.
     // Will run tasks on the current thread if `n_threads` == 0
-    explicit
-    Async(std::size_t n_threads = 0, gcl::AsyncConfig config = {});
+    explicit Async(std::size_t n_threads = 0, gcl::AsyncConfig config = {});
     ~Async();
 
-    void set_active(bool active) override; // Only relevant for QueueType::Spin
-    std::size_t n_threads() const override;
-    void execute(ITask& task) override;
+    void
+    set_active(bool active) override; // Only relevant for QueueType::Spin
+
+    std::size_t
+    n_threads() const override;
+
+    void
+    execute(ITask& task) override;
+
 private:
     struct Impl;
     std::unique_ptr<Impl> m_impl;
@@ -114,91 +141,110 @@ namespace detail
 
 struct CollectParents;
 
-template<typename Result>
+template <typename Result>
 class BaseTask
 {
 public:
-
     using result_type = Result;
 
     // Creates a child to this task (continuation)
-    template<typename Functor>
-    auto then(Functor&& functor) const &;
+    template <typename Functor>
+    auto
+    then(Functor&& functor) const&;
 
     // Creates a child to this task (continuation)
-    template<typename Functor>
-    auto then(Functor&& functor) &&;
+    template <typename Functor>
+    auto
+    then(Functor&& functor) &&;
 
     // Specifies a particular thread the task should run on.
     // If not specified then it'll run on a randomly selected thread
-    void set_thread_affinity(std::size_t thread_index);
+    void
+    set_thread_affinity(std::size_t thread_index);
 
-    // Schedules this task and its parents for execution. Returns true if successfully scheduled
-    // and false if already scheduled and not finished
-    bool schedule_all(gcl::Exec& exec);
+    // Schedules this task and its parents for execution. Returns true if
+    // successfully scheduled and false if already scheduled and not finished
+    bool
+    schedule_all(gcl::Exec& exec);
 
-    // Runs this task and its parents synchronously on the current thread. Returns true if successfully scheduled
-    // and false if already scheduled and not finished
-    bool schedule_all();
+    // Runs this task and its parents synchronously on the current thread.
+    // Returns true if successfully scheduled and false if already scheduled and
+    // not finished
+    bool
+    schedule_all();
 
     // Returns true if this task is currently being scheduled
-    bool is_scheduled() const;
+    bool
+    is_scheduled() const;
 
     // Returns true if this task has a result
-    bool has_result() const;
+    bool
+    has_result() const;
 
     // Waits for this task to finish
-    void wait() const;
+    void
+    wait() const;
 
-    // Sets whether this task's parents' results should be automatically released
-    void set_auto_release_parents(bool auto_release);
+    // Sets whether this task's parents' results should be automatically
+    // released
+    void
+    set_auto_release_parents(bool auto_release);
 
     // Sets whether this task's result should be automatically released
-    void set_auto_release(bool auto_release);
+    void
+    set_auto_release(bool auto_release);
 
-    // Releases this task's parents' results. Returns true if successfully released
-    // and false if currently scheduled and not finished
-    bool release_parents();
+    // Releases this task's parents' results. Returns true if successfully
+    // released and false if currently scheduled and not finished
+    bool
+    release_parents();
 
     // Releases this task's result. Returns true if successfully released
     // and false if currently scheduled and not finished
-    bool release();
+    bool
+    release();
 
     // Returns the unique id of the task
-    gcl::TaskId id() const;
+    gcl::TaskId
+    id() const;
 
     // Returns the edges between this task and all its parent tasks
-    std::vector<gcl::Edge> edges() const;
+    std::vector<gcl::Edge>
+    edges() const;
 
 protected:
     friend struct CollectParents;
 
     BaseTask() = default;
 
-    template<typename Functor, typename... Parents>
-    void init(Functor&& functor, Parents&&... parents);
+    template <typename Functor, typename... Parents>
+    void
+    init(Functor&& functor, Parents&&... parents);
 
     struct Impl;
     std::shared_ptr<Impl> m_impl;
 };
 
-} // detail
+} // namespace detail
 
 // The task type for general result types
-template<typename Result>
+template <typename Result>
 class Task : public gcl::detail::BaseTask<Result>
 {
 public:
+    // Returns the task's result if the task finished (has_result() == true),
+    // null otherwise. Re-throws any exception thrown from running this task or
+    // any of its parents.
+    const Result*
+    get() const;
 
-    // Returns the task's result if the task finished (has_result() == true), null otherwise.
-    // Re-throws any exception thrown from running this task or any of its parents.
-    const Result* get() const;
-
-    template<typename Functor, typename... Parents>
-    static Task create(Functor&& functor, Parents&&... parents)
+    template <typename Functor, typename... Parents>
+    static Task
+    create(Functor&& functor, Parents&&... parents)
     {
         Task<Result> task;
-        task.init(std::forward<Functor>(functor), std::forward<Parents>(parents)...);
+        task.init(std::forward<Functor>(functor),
+                  std::forward<Parents>(parents)...);
         return task;
     }
 
@@ -207,20 +253,23 @@ private:
 };
 
 // The task type for reference result types
-template<typename Result>
+template <typename Result>
 class Task<Result&> : public gcl::detail::BaseTask<Result&>
 {
 public:
+    // Returns the task's result if the task finished (has_result() == true),
+    // null otherwise. Re-throws any exception thrown from running this task or
+    // any of its parents.
+    Result*
+    get() const;
 
-    // Returns the task's result if the task finished (has_result() == true), null otherwise.
-    // Re-throws any exception thrown from running this task or any of its parents.
-    Result* get() const;
-
-    template<typename Functor, typename... Parents>
-    static Task create(Functor&& functor, Parents&&... parents)
+    template <typename Functor, typename... Parents>
+    static Task
+    create(Functor&& functor, Parents&&... parents)
     {
         Task<Result&> task;
-        task.init(std::forward<Functor>(functor), std::forward<Parents>(parents)...);
+        task.init(std::forward<Functor>(functor),
+                  std::forward<Parents>(parents)...);
         return task;
     }
 
@@ -229,20 +278,23 @@ private:
 };
 
 // The task type for void result
-template<>
+template <>
 class Task<void> : public gcl::detail::BaseTask<void>
 {
 public:
+    // Returns true if the task finished (has_result() == true), false
+    // otherwise. Re-throws any exception thrown from running this task or any
+    // of its parents.
+    bool
+    get() const;
 
-    // Returns true if the task finished (has_result() == true), false otherwise.
-    // Re-throws any exception thrown from running this task or any of its parents.
-    bool get() const;
-
-    template<typename Functor, typename... Parents>
-    static Task create(Functor&& functor, Parents&&... parents)
+    template <typename Functor, typename... Parents>
+    static Task
+    create(Functor&& functor, Parents&&... parents)
     {
         Task<void> task;
-        task.init(std::forward<Functor>(functor), std::forward<Parents>(parents)...);
+        task.init(std::forward<Functor>(functor),
+                  std::forward<Parents>(parents)...);
         return task;
     }
 
@@ -251,76 +303,95 @@ private:
 };
 
 // Vector to hold multiple tasks of the same type
-template<typename Result>
+template <typename Result>
 using Vec = std::vector<gcl::Task<Result>>;
 
 // Creates a new task
-template<typename Functor>
-auto task(Functor&& functor)
+template <typename Functor>
+auto
+task(Functor&& functor)
 {
-    return gcl::Task<decltype(functor())>::create(std::forward<Functor>(functor));
+    return gcl::Task<decltype(functor())>::create(
+        std::forward<Functor>(functor));
 }
 
 // Creates a new vector of tasks of the same type
-template<typename... Tasks>
-auto vec(Tasks&&... tasks)
+template <typename... Tasks>
+auto
+vec(Tasks&&... tasks)
 {
     static_assert(sizeof...(tasks) > 0, "Need to provide at least one task");
-    using ResultType = std::tuple_element_t<0, std::tuple<typename std::remove_reference_t<Tasks>::result_type...>>;
+    using ResultType = std::tuple_element_t<
+        0,
+        std::tuple<typename std::remove_reference_t<Tasks>::result_type...>>;
     return gcl::Vec<ResultType>{std::forward<Tasks>(tasks)...};
 }
 
 namespace detail
 {
 
-template<typename Functor, typename Tuple, std::size_t... Is>
-decltype(auto) call_impl(Functor&& f, Tuple&& t, std::index_sequence<Is...>)
+template <typename Functor, typename Tuple, std::size_t... Is>
+decltype(auto)
+call_impl(Functor&& f, Tuple&& t, std::index_sequence<Is...>)
 {
     return std::forward<Functor>(f)(std::get<Is>(std::forward<Tuple>(t))...);
 }
 
-template<typename Functor, typename Tuple>
-decltype(auto) call(Functor&& f, Tuple&& t)
+template <typename Functor, typename Tuple>
+decltype(auto)
+call(Functor&& f, Tuple&& t)
 {
-    return call_impl(std::forward<Functor>(f), std::forward<Tuple>(t),
-                     std::make_index_sequence<std::tuple_size<std::remove_reference_t<Tuple>>::value>{});
+    return call_impl(
+        std::forward<Functor>(f),
+        std::forward<Tuple>(t),
+        std::make_index_sequence<
+            std::tuple_size<std::remove_reference_t<Tuple>>::value>{});
 }
 
-template<typename F>
-void for_each_impl(const F&)
-{}
+template <typename F>
+void
+for_each_impl(const F&)
+{
+}
 
-template<typename F, typename Result, typename... Tasks>
-void for_each_impl(const F& f, const gcl::Task<Result>& t, Tasks&&... tasks)
+template <typename F, typename Result, typename... Tasks>
+void
+for_each_impl(const F& f, const gcl::Task<Result>& t, Tasks&&... tasks)
 {
     f(t);
     for_each_impl(f, std::forward<Tasks>(tasks)...);
 }
 
-template<typename F, typename Result, typename... Tasks>
-void for_each_impl(const F& f, gcl::Task<Result>&& t, Tasks&&... tasks)
+template <typename F, typename Result, typename... Tasks>
+void
+for_each_impl(const F& f, gcl::Task<Result>&& t, Tasks&&... tasks)
 {
     f(std::move(t));
     for_each_impl(f, std::forward<Tasks>(tasks)...);
 }
 
-template<typename F, typename Result, typename... Tasks>
-void for_each_impl(const F& f, const gcl::Vec<Result>& ts, Tasks&&... tasks)
+template <typename F, typename Result, typename... Tasks>
+void
+for_each_impl(const F& f, const gcl::Vec<Result>& ts, Tasks&&... tasks)
 {
-    for (const gcl::Task<Result>& t : ts) f(t);
+    for (const gcl::Task<Result>& t : ts)
+        f(t);
     for_each_impl(f, std::forward<Tasks>(tasks)...);
 }
 
-template<typename F, typename Result, typename... Tasks>
-void for_each_impl(const F& f, gcl::Vec<Result>&& ts, Tasks&&... tasks)
+template <typename F, typename Result, typename... Tasks>
+void
+for_each_impl(const F& f, gcl::Vec<Result>&& ts, Tasks&&... tasks)
 {
-    for (gcl::Task<Result>&& t : ts) f(std::move(t));
+    for (gcl::Task<Result>&& t : ts)
+        f(std::move(t));
     for_each_impl(f, std::forward<Tasks>(tasks)...);
 }
 
 // Applies functor `f` to each task in `tasks` which can be of type `Task` and/or `Vec`
-template<typename Functor, typename... Tasks>
-void for_each(const Functor& f, Tasks&&... tasks)
+template <typename Functor, typename... Tasks>
+void
+for_each(const Functor& f, Tasks&&... tasks)
 {
     gcl::detail::for_each_impl(f, std::forward<Tasks>(tasks)...);
 }
@@ -332,25 +403,29 @@ public:
     virtual ~BaseImpl() = default;
 
     // Called from scheduler thread
-    int thread_affinity() const override
+    int
+    thread_affinity() const override
     {
         return m_thread_affinity;
     }
 
     // Called from scheduler thread
-    const std::vector<gcl::ITask*>& children() const override
+    const std::vector<gcl::ITask*>&
+    children() const override
     {
         return m_children;
     }
 
     // Called from scheduler thread
-    bool set_parent_finished() override
+    bool
+    set_parent_finished() override
     {
         return ++m_parents_ready == m_parents.size();
     }
 
     // Called from scheduler thread
-    void set_finished() override
+    bool
+    set_finished() override
     {
         for (const auto parent : parents())
         {
@@ -363,37 +438,47 @@ public:
         {
             auto_release_if();
         }
+        const bool has_children = !m_children.empty();
         m_promise.set_value();
         m_scheduled = false;
+        return has_children;
     }
 
     // Called from scheduler and processor threads but never simultaneously
-    gcl::ITask*& next() override
+    gcl::ITask*&
+    next() override
     {
         return m_next;
     }
 
     // Called from scheduler and processor threads but never simultaneously
-    gcl::ITask*& previous() override
+    gcl::ITask*&
+    previous() override
     {
         return m_previous;
     }
 
-    virtual void prepare() = 0;
-    virtual void release() = 0;
+    virtual void
+    prepare() = 0;
 
-    void set_thread_affinity(const int affinity)
+    virtual void
+    release() = 0;
+
+    void
+    set_thread_affinity(const int affinity)
     {
         m_thread_affinity = affinity;
     }
 
-    void set_auto_release(const bool auto_release)
+    void
+    set_auto_release(const bool auto_release)
     {
         m_auto_release = auto_release;
     }
 
-    template<typename Visitor>
-    void visit(const Visitor& visitor)
+    template <typename Visitor>
+    void
+    visit(const Visitor& visitor)
     {
         if (!m_task_cache)
         {
@@ -420,49 +505,58 @@ public:
                 task->m_visited = false;
             }
         }
-        for (auto task = m_task_cache->rbegin(); task != m_task_cache->rend(); ++task)
+        for (auto task = m_task_cache->rbegin(); task != m_task_cache->rend();
+             ++task)
         {
             visitor(**task);
         }
     }
 
-    void wait() const
+    void
+    wait() const
     {
         m_future.wait();
-        while (is_scheduled());
+        while (is_scheduled())
+            ;
     }
 
-    bool is_scheduled() const
+    bool
+    is_scheduled() const
     {
         return m_scheduled;
     }
 
-    void add_child(BaseImpl& child)
+    void
+    add_child(BaseImpl& child)
     {
         m_children.emplace_back(&child);
         m_task_cache.reset();
     }
 
-    void add_parent(BaseImpl& parent)
+    void
+    add_parent(BaseImpl& parent)
     {
         m_parents.emplace_back(&parent);
         parent.add_child(*this);
     }
 
     // Called from scheduler thread
-    const std::vector<BaseImpl*>& parents() const
+    const std::vector<BaseImpl*>&
+    parents() const
     {
         return m_parents;
     }
 
     // Called from scheduler thread
-    bool set_child_finished()
+    bool
+    set_child_finished()
     {
         return ++m_children_ready == m_children.size();
     }
 
     // Called from scheduler thread
-    void auto_release_if()
+    void
+    auto_release_if()
     {
         if (m_auto_release)
         {
@@ -470,16 +564,17 @@ public:
         }
     }
 
-    gcl::TaskId id() const
+    gcl::TaskId
+    id() const
     {
         return std::hash<const BaseImpl*>{}(this);
     }
 
-    std::vector<gcl::Edge> edges()
+    std::vector<gcl::Edge>
+    edges()
     {
         std::vector<Edge> es;
-        visit([&es](BaseImpl& i)
-        {
+        visit([&es](BaseImpl& i) {
             for (const auto p : i.m_parents)
             {
                 es.push_back({p->id(), i.id()});
@@ -509,27 +604,31 @@ protected:
 struct CollectParents
 {
     gcl::detail::BaseImpl* impl;
-    template<typename Parent>
-    void operator()(const Parent& parent) const
+    template <typename Parent>
+    void
+    operator()(const Parent& parent) const
     {
         impl->add_parent(*parent.m_impl);
     }
 };
 
-template<typename Result>
+template <typename Result>
 class ChannelElement
 {
 public:
     ChannelElement(Result&& value)
         : m_value{std::move(value)}
         , m_has_value{true}
-    {}
+    {
+    }
     ChannelElement(std::exception_ptr&& exception)
         : m_exception{std::move(exception)}
-    {}
+    {
+    }
 
     ChannelElement(const ChannelElement&) = delete;
-    ChannelElement& operator=(const ChannelElement&) = delete;
+    ChannelElement&
+    operator=(const ChannelElement&) = delete;
 
     ChannelElement(ChannelElement&& other) noexcept
     {
@@ -544,19 +643,23 @@ public:
         }
     }
 
-    ChannelElement& operator=(ChannelElement&&) = delete;
+    ChannelElement&
+    operator=(ChannelElement&&) = delete;
 
-    bool has_value() const
+    bool
+    has_value() const
     {
         return m_has_value;
     }
 
-    const Result* value() const
+    const Result*
+    value() const
     {
         return &m_value;
     }
 
-    const std::exception_ptr& exception() const
+    const std::exception_ptr&
+    exception() const
     {
         return m_exception;
     }
@@ -574,7 +677,7 @@ public:
     }
 
 private:
-    union 
+    union
     {
         Result m_value;
         std::exception_ptr m_exception;
@@ -582,27 +685,30 @@ private:
     bool m_has_value = false;
 };
 
-template<typename Result>
+template <typename Result>
 class ChannelElement<Result&>
 {
 public:
     ChannelElement(Result& value)
         : m_value{&value}
         , m_has_value{true}
-    {}
+    {
+    }
     ChannelElement(std::exception_ptr&& exception)
         : m_exception{std::move(exception)}
-    {}
+    {
+    }
 
     ChannelElement(const ChannelElement&) = delete;
-    ChannelElement& operator=(const ChannelElement&) = delete;
+    ChannelElement&
+    operator=(const ChannelElement&) = delete;
 
     ChannelElement(ChannelElement&& other) noexcept
     {
         m_has_value = other.m_has_value;
         if (m_has_value)
         {
-            new (&m_value) Result*{std::move(other.m_value)};
+            new (&m_value) Result* {std::move(other.m_value)};
         }
         else
         {
@@ -610,19 +716,23 @@ public:
         }
     }
 
-    ChannelElement& operator=(ChannelElement&&) = delete;
+    ChannelElement&
+    operator=(ChannelElement&&) = delete;
 
-    bool has_value() const
+    bool
+    has_value() const
     {
         return m_has_value;
     }
 
-    Result* value() const
+    Result*
+    value() const
     {
         return m_value;
     }
 
-    const std::exception_ptr& exception() const
+    const std::exception_ptr&
+    exception() const
     {
         return m_exception;
     }
@@ -636,7 +746,7 @@ public:
     }
 
 private:
-    union 
+    union
     {
         Result* m_value;
         std::exception_ptr m_exception;
@@ -644,28 +754,34 @@ private:
     bool m_has_value = false;
 };
 
-template<>
+template <>
 class ChannelElement<void>
 {
 public:
     ChannelElement()
-    {}
+    {
+    }
     ChannelElement(std::exception_ptr&& exception)
         : m_exception{std::move(exception)}
-    {}
+    {
+    }
 
     ChannelElement(const ChannelElement&) = delete;
-    ChannelElement& operator=(const ChannelElement&) = delete;
-    
-    ChannelElement(ChannelElement&& other) = default;
-    ChannelElement& operator=(ChannelElement&&) = delete;
+    ChannelElement&
+    operator=(const ChannelElement&) = delete;
 
-    bool has_value() const
+    ChannelElement(ChannelElement&& other) = default;
+    ChannelElement&
+    operator=(ChannelElement&&) = delete;
+
+    bool
+    has_value() const
     {
         return !m_exception;
     }
 
-    const std::exception_ptr& exception() const
+    const std::exception_ptr&
+    exception() const
     {
         return m_exception;
     }
@@ -675,43 +791,51 @@ private:
 };
 
 // Unless otherwise mentioned a given method is called from the control thread
-template<typename Result>
+template <typename Result>
 class Channel
 {
 public:
     Channel() = default;
 
     Channel(const Channel&) = delete;
-    Channel& operator=(const Channel&) = delete;
+    Channel&
+    operator=(const Channel&) = delete;
 
     ~Channel()
     {
         reset();
     }
 
-    void set_future(const std::future<void>& future)
+    void
+    set_future(const std::future<void>& future)
     {
         GCL_ASSERT(future.valid());
         m_future = &future;
     }
 
     // Called from a processor thread
-    void set(gcl::detail::ChannelElement<Result>&& element)
+    void
+    set(gcl::detail::ChannelElement<Result>&& element)
     {
         new (m_storage) gcl::detail::ChannelElement<Result>{std::move(element)};
     }
 
-    const gcl::detail::ChannelElement<Result>* get() const
+    const gcl::detail::ChannelElement<Result>*
+    get() const
     {
-        if (!m_future || m_future.load()->wait_for(std::chrono::seconds{0}) != std::future_status::ready)
+        if (!m_future ||
+            m_future.load()->wait_for(std::chrono::seconds{0}) !=
+                std::future_status::ready)
         {
             return nullptr;
         }
-        return reinterpret_cast<const gcl::detail::ChannelElement<Result>*>(m_storage);
+        return reinterpret_cast<const gcl::detail::ChannelElement<Result>*>(
+            m_storage);
     }
 
     // Called from either control or scheduler thread
-    void reset()
+    void
+    reset()
     {
         if (const auto element = get())
         {
@@ -725,37 +849,42 @@ private:
     char m_storage[sizeof(gcl::detail::ChannelElement<Result>)];
 };
 
-template<typename Result>
+template <typename Result>
 class Binding
 {
 public:
     virtual ~Binding() = default;
-    virtual Result evaluate() = 0;
+    virtual Result
+    evaluate() = 0;
 };
 
-template<typename Result, typename Functor, typename... Parents>
+template <typename Result, typename Functor, typename... Parents>
 class BindingImpl : public gcl::detail::Binding<Result>
 {
 public:
-    template<typename F, typename... P>
-    explicit
-    BindingImpl(F&& functor, P&&... parents)
+    template <typename F, typename... P>
+    explicit BindingImpl(F&& functor, P&&... parents)
         : m_functor{std::forward<F>(functor)}
         , m_parents{std::make_tuple(std::forward<P>(parents)...)}
-    {}
+    {
+    }
 
     BindingImpl(const BindingImpl&) = delete;
-    BindingImpl& operator=(const BindingImpl&) = delete;
+    BindingImpl&
+    operator=(const BindingImpl&) = delete;
 
-    Result evaluate() override
+    Result
+    evaluate() override
     {
-        return gcl::detail::call([this](auto&&... p) -> Result
-                                 {
+        return gcl::detail::call(
+            [this](auto&&... p) -> Result {
 #ifndef NDEBUG
-                                     gcl::detail::for_each([](const auto& p){ GCL_ASSERT(p.has_result()); }, p...);
+                gcl::detail::for_each(
+                    [](const auto& p) { GCL_ASSERT(p.has_result()); }, p...);
 #endif
-                                     return m_functor(std::forward<decltype(p)>(p)...);
-                                 }, m_parents);
+                return m_functor(std::forward<decltype(p)>(p)...);
+            },
+            m_parents);
     }
 
 private:
@@ -763,10 +892,12 @@ private:
     std::tuple<std::remove_reference_t<Parents>...> m_parents;
 };
 
-template<typename Result>
+template <typename Result>
 struct Evaluate
 {
-    void operator()(gcl::detail::Channel<Result>& channel, gcl::detail::Binding<Result>& binding) const
+    void
+    operator()(gcl::detail::Channel<Result>& channel,
+               gcl::detail::Binding<Result>& binding) const
     {
         try
         {
@@ -779,10 +910,12 @@ struct Evaluate
     }
 };
 
-template<>
+template <>
 struct Evaluate<void>
 {
-    void operator()(gcl::detail::Channel<void>& channel, gcl::detail::Binding<void>& binding) const
+    void
+    operator()(gcl::detail::Channel<void>& channel,
+               gcl::detail::Binding<void>& binding) const
     {
         try
         {
@@ -797,19 +930,21 @@ struct Evaluate<void>
 };
 
 // Unless otherwise mentioned a given method is called from the control thread
-template<typename Result>
+template <typename Result>
 struct BaseTask<Result>::Impl : BaseImpl
 {
-    template<typename Functor, typename... Parents>
-    explicit
-    Impl(Functor&& functor, Parents&&... parents)
+    template <typename Functor, typename... Parents>
+    explicit Impl(Functor&& functor, Parents&&... parents)
     {
         gcl::detail::for_each(gcl::detail::CollectParents{this}, parents...);
-        m_binding = std::make_unique<gcl::detail::BindingImpl<Result, Functor, Parents...>>(std::forward<Functor>(functor), std::forward<Parents>(parents)...);
+        m_binding = std::make_unique<
+            gcl::detail::BindingImpl<Result, Functor, Parents...>>(
+            std::forward<Functor>(functor), std::forward<Parents>(parents)...);
         m_future = m_promise.get_future();
     }
 
-    void prepare() override
+    void
+    prepare() override
     {
         m_parents_ready = 0;
         m_children_ready = 0;
@@ -821,18 +956,21 @@ struct BaseTask<Result>::Impl : BaseImpl
     }
 
     // Called from a processor thread
-    void call() override
+    void
+    call() override
     {
         gcl::detail::Evaluate<Result>{}(m_channel, *m_binding);
     }
 
     // Called from either control or scheduler thread
-    void release() override
+    void
+    release() override
     {
         m_channel.reset();
     }
 
-    const ChannelElement<Result>* channel_element() const
+    const ChannelElement<Result>*
+    channel_element() const
     {
         if (m_scheduled)
         {
@@ -846,35 +984,45 @@ private:
     Channel<Result> m_channel;
 };
 
-template<typename Result>
-template<typename Functor>
-auto BaseTask<Result>::then(Functor&& functor) const &
+template <typename Result>
+template <typename Functor>
+auto
+BaseTask<Result>::then(Functor&& functor) const&
 {
-    return gcl::Task<decltype(functor(static_cast<const gcl::Task<Result>&>(*this)))>::create(std::forward<Functor>(functor), static_cast<const gcl::Task<Result>&>(*this));
+    return gcl::Task<decltype(functor(static_cast<const gcl::Task<Result>&>(
+        *this)))>::create(std::forward<Functor>(functor),
+                          static_cast<const gcl::Task<Result>&>(*this));
 }
 
-template<typename Result>
-template<typename Functor>
-auto BaseTask<Result>::then(Functor&& functor) &&
+template <typename Result>
+template <typename Functor>
+auto
+BaseTask<Result>::then(Functor&& functor) &&
 {
-    return gcl::Task<decltype(functor(static_cast<gcl::Task<Result>&&>(*this)))>::create(std::forward<Functor>(functor), static_cast<gcl::Task<Result>&&>(*this));
+    return gcl::Task<decltype(functor(static_cast<gcl::Task<Result>&&>(
+        *this)))>::create(std::forward<Functor>(functor),
+                          static_cast<gcl::Task<Result>&&>(*this));
 }
 
-template<typename Result>
-template<typename Functor, typename... Parents>
-void BaseTask<Result>::init(Functor&& functor, Parents&&... parents)
+template <typename Result>
+template <typename Functor, typename... Parents>
+void
+BaseTask<Result>::init(Functor&& functor, Parents&&... parents)
 {
-    m_impl = std::make_shared<Impl>(std::forward<Functor>(functor), std::forward<Parents>(parents)...);
+    m_impl = std::make_shared<Impl>(std::forward<Functor>(functor),
+                                    std::forward<Parents>(parents)...);
 }
 
-template<typename Result>
-void BaseTask<Result>::set_thread_affinity(const std::size_t thread_index)
+template <typename Result>
+void
+BaseTask<Result>::set_thread_affinity(const std::size_t thread_index)
 {
     m_impl->set_thread_affinity(static_cast<int>(thread_index));
 }
 
-template<typename Result>
-bool BaseTask<Result>::schedule_all(gcl::Exec& exec)
+template <typename Result>
+bool
+BaseTask<Result>::schedule_all(gcl::Exec& exec)
 {
     if (is_scheduled())
     {
@@ -885,8 +1033,7 @@ bool BaseTask<Result>::schedule_all(gcl::Exec& exec)
         return schedule_all();
     }
     std::vector<gcl::ITask*> roots;
-    m_impl->visit([&roots](BaseImpl& i)
-    {
+    m_impl->visit([&roots](BaseImpl& i) {
         i.prepare();
         if (i.parents().empty())
         {
@@ -900,15 +1047,15 @@ bool BaseTask<Result>::schedule_all(gcl::Exec& exec)
     return true;
 }
 
-template<typename Result>
-bool BaseTask<Result>::schedule_all()
+template <typename Result>
+bool
+BaseTask<Result>::schedule_all()
 {
     if (is_scheduled())
     {
         return false;
     }
-    m_impl->visit([](BaseImpl& i)
-    {
+    m_impl->visit([](BaseImpl& i) {
         i.prepare();
         i.call();
         i.set_finished();
@@ -916,51 +1063,68 @@ bool BaseTask<Result>::schedule_all()
     return true;
 }
 
-template<typename Result>
-bool BaseTask<Result>::is_scheduled() const
+template <typename Result>
+bool
+BaseTask<Result>::is_scheduled() const
 {
     return m_impl->is_scheduled();
 }
 
-template<typename Result>
-bool BaseTask<Result>::has_result() const
+template <typename Result>
+bool
+BaseTask<Result>::has_result() const
 {
     return m_impl->channel_element();
 }
 
-template<typename Result>
-void BaseTask<Result>::wait() const
+template <typename Result>
+void
+BaseTask<Result>::wait() const
 {
     m_impl->wait();
 }
 
-template<typename Result>
-void BaseTask<Result>::set_auto_release_parents(const bool auto_release)
+template <typename Result>
+void
+BaseTask<Result>::set_auto_release_parents(const bool auto_release)
 {
     const auto final = m_impl.get();
-    m_impl->visit([auto_release, final](BaseImpl& i){ if (&i != final) { i.set_auto_release(auto_release); } });
+    m_impl->visit([auto_release, final](BaseImpl& i) {
+        if (&i != final)
+        {
+            i.set_auto_release(auto_release);
+        }
+    });
 }
 
-template<typename Result>
-void BaseTask<Result>::set_auto_release(const bool auto_release)
+template <typename Result>
+void
+BaseTask<Result>::set_auto_release(const bool auto_release)
 {
     m_impl->set_auto_release(auto_release);
 }
 
-template<typename Result>
-bool BaseTask<Result>::release_parents()
+template <typename Result>
+bool
+BaseTask<Result>::release_parents()
 {
     if (is_scheduled())
     {
         return false;
     }
     const auto final = m_impl.get();
-    m_impl->visit([final](BaseImpl& i){ if (&i != final) { i.release(); } });
+    m_impl->visit([final](BaseImpl& i) {
+        if (&i != final)
+        {
+            i.release();
+        }
+    });
     return true;
 }
 
-template<typename Result>
-bool BaseTask<Result>::release()
+template <typename Result>
+bool
+BaseTask<Result>::release()
 {
     if (is_scheduled())
     {
@@ -970,22 +1134,25 @@ bool BaseTask<Result>::release()
     return true;
 }
 
-template<typename Result>
-gcl::TaskId BaseTask<Result>::id() const
+template <typename Result>
+gcl::TaskId
+BaseTask<Result>::id() const
 {
     return m_impl->id();
 }
 
-template<typename Result>
-std::vector<gcl::Edge> BaseTask<Result>::edges() const
+template <typename Result>
+std::vector<gcl::Edge>
+BaseTask<Result>::edges() const
 {
     return m_impl->edges();
 }
 
-} // detail
+} // namespace detail
 
-template<typename Result>
-const Result* Task<Result>::get() const
+template <typename Result>
+const Result*
+Task<Result>::get() const
 {
     if (const auto element = this->m_impl->channel_element())
     {
@@ -1001,8 +1168,9 @@ const Result* Task<Result>::get() const
     return nullptr;
 }
 
-template<typename Result>
-Result* Task<Result&>::get() const
+template <typename Result>
+Result*
+Task<Result&>::get() const
 {
     if (const auto element = this->m_impl->channel_element())
     {
@@ -1018,8 +1186,8 @@ Result* Task<Result&>::get() const
     return nullptr;
 }
 
-inline
-bool Task<void>::get() const
+inline bool
+Task<void>::get() const
 {
     if (const auto element = this->m_impl->channel_element())
     {
@@ -1033,77 +1201,98 @@ bool Task<void>::get() const
 }
 
 // Ties tasks together which can be of type `Task` and/or `Vec`
-template<typename... Tasks>
+template <typename... Tasks>
 class Tie
 {
 public:
     static_assert(sizeof...(Tasks) > 0, "Need to provide at least one task");
 
-    explicit
-    Tie(const Tasks&... tasks)
+    explicit Tie(const Tasks&... tasks)
         : m_tasks{std::make_tuple(tasks...)}
-    {}
-
-    explicit
-    Tie(Tasks&&... tasks)
-        : m_tasks{std::make_tuple(std::move(tasks)...)}
-    {}
-
-    // Creates a child to all tied tasks (continuation)
-    template<typename Functor>
-    auto then(Functor&& functor) const &
     {
-        return then_impl(std::forward<Functor>(functor), std::index_sequence_for<Tasks...>{});
+    }
+
+    explicit Tie(Tasks&&... tasks)
+        : m_tasks{std::make_tuple(std::move(tasks)...)}
+    {
     }
 
     // Creates a child to all tied tasks (continuation)
-    template<typename Functor>
-    auto then(Functor&& functor) &&
+    template <typename Functor>
+    auto
+    then(Functor&& functor) const&
     {
-        return then_impl(std::forward<Functor>(functor), std::index_sequence_for<Tasks...>{});
+        return then_impl(std::forward<Functor>(functor),
+                         std::index_sequence_for<Tasks...>{});
+    }
+
+    // Creates a child to all tied tasks (continuation)
+    template <typename Functor>
+    auto
+    then(Functor&& functor) &&
+    {
+        return then_impl(std::forward<Functor>(functor),
+                         std::index_sequence_for<Tasks...>{});
     }
 
 private:
-
-    template<typename Functor, std::size_t... Is>
-    auto then_impl(Functor&& functor, std::index_sequence<Is...>) const &
+    template <typename Functor, std::size_t... Is>
+    auto
+    then_impl(Functor&& functor, std::index_sequence<Is...>) const&
     {
-        return gcl::Task<decltype(functor(std::get<Is>(m_tasks)...))>::create(std::forward<Functor>(functor), std::get<Is>(m_tasks)...);
+        return gcl::Task<decltype(functor(std::get<Is>(m_tasks)...))>::create(
+            std::forward<Functor>(functor), std::get<Is>(m_tasks)...);
     }
 
-    template<typename Functor, std::size_t... Is>
-    auto then_impl(Functor&& functor, std::index_sequence<Is...>) &&
+    template <typename Functor, std::size_t... Is>
+    auto
+    then_impl(Functor&& functor, std::index_sequence<Is...>) &&
     {
-        return gcl::Task<decltype(functor(std::get<Is>(m_tasks)...))>::create(std::forward<Functor>(functor), std::get<Is>(std::move(m_tasks))...);
+        return gcl::Task<decltype(functor(std::get<Is>(m_tasks)...))>::create(
+            std::forward<Functor>(functor),
+            std::get<Is>(std::move(m_tasks))...);
     }
 
     std::tuple<Tasks...> m_tasks;
 };
 
 // Ties tasks together where `tasks` can be of type `Task` and/or `Vec`
-template<typename... Tasks>
-auto tie(Tasks&&... tasks)
+template <typename... Tasks>
+auto
+tie(Tasks&&... tasks)
 {
-    return gcl::Tie<std::remove_reference_t<Tasks>...>{std::forward<Tasks>(tasks)...};
+    return gcl::Tie<std::remove_reference_t<Tasks>...>{
+        std::forward<Tasks>(tasks)...};
 }
 
 // Creates a child that waits for all tasks to finish that are part of `tie`
-template<typename... Tasks>
-gcl::Task<void> when(const gcl::Tie<Tasks...>& tie)
+template <typename... Tasks>
+gcl::Task<void>
+when(const gcl::Tie<Tasks...>& tie)
 {
-    return tie.then([](auto&&... ts){ gcl::detail::for_each([](auto&& t){ std::forward<decltype(t)>(t).get(); }, std::forward<decltype(ts)>(ts)...); });
+    return tie.then([](auto&&... ts) {
+        gcl::detail::for_each(
+            [](auto&& t) { std::forward<decltype(t)>(t).get(); },
+            std::forward<decltype(ts)>(ts)...);
+    });
 }
 
 // Creates a child that waits for all tasks to finish that are part of `tie`
-template<typename... Tasks>
-gcl::Task<void> when(gcl::Tie<Tasks...>&& tie)
+template <typename... Tasks>
+gcl::Task<void>
+when(gcl::Tie<Tasks...>&& tie)
 {
-    return std::move(tie).then([](auto&&... ts){ gcl::detail::for_each([](auto&& t){ std::forward<decltype(t)>(t).get(); }, std::forward<decltype(ts)>(ts)...); });
+    return std::move(tie).then([](auto&&... ts) {
+        gcl::detail::for_each(
+            [](auto&& t) { std::forward<decltype(t)>(t).get(); },
+            std::forward<decltype(ts)>(ts)...);
+    });
 }
 
 // Creates a child that waits for all tasks to finish where `tasks` can be of type `Task` and/or `Vec`
-template<typename... Tasks>
-gcl::Task<void> when(Tasks... tasks)
+template <typename... Tasks>
+gcl::Task<void>
+when(Tasks... tasks)
 {
     return gcl::when(gcl::tie(std::move(tasks)...));
 }
@@ -1113,16 +1302,19 @@ class CancelToken
 {
 public:
     // Called from outside the task
-    void set_canceled(const bool canceled = true)
+    void
+    set_canceled(const bool canceled = true)
     {
         m_token = canceled;
     }
 
     // Checked from within a task's functor
-    bool is_canceled() const
+    bool
+    is_canceled() const
     {
         return m_token.load();
     }
+
 private:
     std::atomic<bool> m_token{false};
 };
@@ -1130,48 +1322,54 @@ private:
 namespace detail
 {
 
-template<bool is_arithmetic>
+template <bool is_arithmetic>
 struct Distance;
 
-template<>
+template <>
 struct Distance<true>
 {
-    template<typename Number1, typename Number2>
-    auto operator()(const Number1 first, const Number2 last) const
+    template <typename Number1, typename Number2>
+    auto
+    operator()(const Number1 first, const Number2 last) const
     {
-        static_assert(std::is_integral<Number1>::value && std::is_integral<Number2>::value, "Number type must be integral");
+        static_assert(std::is_integral<Number1>::value &&
+                          std::is_integral<Number2>::value,
+                      "Number type must be integral");
         GCL_ASSERT(last >= first);
         return last - first;
     }
 };
 
-template<>
+template <>
 struct Distance<false>
 {
-    template<typename Iterator>
-    auto operator()(const Iterator first, const Iterator last) const
+    template <typename Iterator>
+    auto
+    operator()(const Iterator first, const Iterator last) const
     {
         return std::distance(first, last);
     }
 };
 
-}
+} // namespace detail
 
-// A function similar to std::for_each but returning a task for asynchronous execution.
-// This function creates a graph with distance(first, last) + 1 tasks. UB if first > last.
-// Note that `unary_op` takes an object of type T.
-template<typename T, typename U, typename UnaryOperation>
-gcl::Task<void> for_each(T first, const U last, UnaryOperation unary_op)
+// A function similar to std::for_each but returning a task for asynchronous
+// execution. This function creates a graph with distance(first, last) + 1
+// tasks. UB if first > last. Note that `unary_op` takes an object of type T.
+template <typename T, typename U, typename UnaryOperation>
+gcl::Task<void>
+for_each(T first, const U last, UnaryOperation unary_op)
 {
-    const auto distance = gcl::detail::Distance<std::is_arithmetic<U>::value>{}(first, last);
+    const auto distance =
+        gcl::detail::Distance<std::is_arithmetic<U>::value>{}(first, last);
     GCL_ASSERT(distance >= 0);
     gcl::Vec<void> tasks;
     tasks.reserve(static_cast<std::size_t>(distance));
     for (; first != last; ++first)
     {
-        tasks.emplace_back(gcl::task([unary_op, first]{ unary_op(first); }));
+        tasks.emplace_back(gcl::task([unary_op, first] { unary_op(first); }));
     }
     return gcl::when(std::move(tasks));
 }
 
-} // gcl
+} // namespace gcl

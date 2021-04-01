@@ -18,12 +18,13 @@ namespace
 class SpinLock
 {
 public:
-    explicit
-    SpinLock(const bool yields)
+    explicit SpinLock(const bool yields)
         : m_yields{yields}
-    {}
+    {
+    }
 
-    void lock() noexcept
+    void
+    lock() noexcept
     {
         while (m_locked.test_and_set(std::memory_order_acquire))
         {
@@ -34,7 +35,8 @@ public:
         }
     }
 
-    void unlock() noexcept
+    void
+    unlock() noexcept
     {
         m_locked.clear(std::memory_order_release);
     }
@@ -47,24 +49,32 @@ private:
 class TaskQueue
 {
 public:
-
     TaskQueue() = default;
 
     TaskQueue(const TaskQueue&) = delete;
-    TaskQueue& operator=(const TaskQueue&) = delete;
+    TaskQueue&
+    operator=(const TaskQueue&) = delete;
 
     virtual ~TaskQueue() = default;
 
-    virtual void shutdown() {}
+    virtual void
+    shutdown()
+    {
+    }
 
-    virtual void yield() const {}
+    virtual void
+    yield() const
+    {
+    }
 
-    virtual std::size_t size() const
+    virtual std::size_t
+    size() const
     {
         return m_size;
     }
 
-    virtual void push(ITask* const task)
+    virtual void
+    push(ITask* const task)
     {
         if (m_head)
         {
@@ -80,7 +90,8 @@ public:
         ++m_size;
     }
 
-    virtual ITask* pop()
+    virtual ITask*
+    pop()
     {
         ITask* task = nullptr;
         if (m_head)
@@ -112,25 +123,27 @@ private:
 class TaskQueueMutex : public TaskQueue
 {
 public:
-
-    explicit
-    TaskQueueMutex(const std::atomic<bool>& done)
+    explicit TaskQueueMutex(const std::atomic<bool>& done)
         : m_done{done}
-    {}
+    {
+    }
 
-    void shutdown() override
+    void
+    shutdown() override
     {
         m_cv.notify_one();
     }
 
-    std::size_t size() const override
+    std::size_t
+    size() const override
     {
         std::lock_guard<std::mutex> lock{m_mutex};
         return TaskQueue::size();
     }
 
     // multiple producer
-    void push(ITask* const task) override
+    void
+    push(ITask* const task) override
     {
         std::lock_guard<std::mutex> lock{m_mutex};
         TaskQueue::push(task);
@@ -138,10 +151,11 @@ public:
     }
 
     // single consumer
-    ITask* pop() override
+    ITask*
+    pop() override
     {
         std::unique_lock<std::mutex> lock{m_mutex};
-        m_cv.wait(lock, [this]{ return TaskQueue::size() > 0 || m_done; });
+        m_cv.wait(lock, [this] { return TaskQueue::size() > 0 || m_done; });
         return TaskQueue::pop();
     }
 
@@ -155,15 +169,17 @@ private:
 class TaskQueueSpin : public TaskQueue
 {
 public:
-
-    explicit
-    TaskQueueSpin(const bool yields, const std::atomic<bool>& active, const std::chrono::microseconds sleep_interval)
+    explicit TaskQueueSpin(const bool yields,
+                           const std::atomic<bool>& active,
+                           const std::chrono::microseconds sleep_interval)
         : m_spin{yields}
         , m_active{active}
         , m_sleep_interval{sleep_interval}
-    {}
+    {
+    }
 
-    void yield() const override
+    void
+    yield() const override
     {
         if (m_sleep_interval <= std::chrono::microseconds{0})
         {
@@ -175,21 +191,24 @@ public:
         }
     }
 
-    std::size_t size() const override
+    std::size_t
+    size() const override
     {
         std::lock_guard<SpinLock> lock{m_spin};
         return TaskQueue::size();
     }
 
     // multiple producer
-    void push(ITask* const task) override
+    void
+    push(ITask* const task) override
     {
         std::lock_guard<SpinLock> lock{m_spin};
         TaskQueue::push(task);
     }
 
     // single consumer
-    ITask* pop() override
+    ITask*
+    pop() override
     {
         std::lock_guard<SpinLock> lock{m_spin};
         return TaskQueue::pop();
@@ -201,12 +220,20 @@ private:
     const std::chrono::microseconds m_sleep_interval;
 };
 
-std::unique_ptr<TaskQueue> make_task_queue(const AsyncConfig::QueueType queue_type, std::atomic<bool>& done, const bool spin_lock_yields, const std::atomic<bool>& active, const std::chrono::microseconds sleep_interval)
+std::unique_ptr<TaskQueue>
+make_task_queue(const AsyncConfig::QueueType queue_type,
+                std::atomic<bool>& done,
+                const bool spin_lock_yields,
+                const std::atomic<bool>& active,
+                const std::chrono::microseconds sleep_interval)
 {
     switch (queue_type)
     {
-    case AsyncConfig::QueueType::Mutex: return std::make_unique<TaskQueueMutex>(done);
-    case AsyncConfig::QueueType::Spin: return std::make_unique<TaskQueueSpin>(spin_lock_yields, active, sleep_interval);
+    case AsyncConfig::QueueType::Mutex:
+        return std::make_unique<TaskQueueMutex>(done);
+    case AsyncConfig::QueueType::Spin:
+        return std::make_unique<TaskQueueSpin>(
+            spin_lock_yields, active, sleep_interval);
     }
     GCL_ASSERT(false);
     return nullptr;
@@ -216,17 +243,20 @@ class Worker
 {
 public:
     virtual ~Worker() = default;
-    virtual void run() = 0;
-    virtual void shutdown() = 0;
+    virtual void
+    run() = 0;
+    virtual void
+    shutdown() = 0;
 };
 
 class Thread
 {
 public:
-    void start(Worker& worker)
+    void
+    start(Worker& worker)
     {
         GCL_ASSERT(!m_worker);
-        m_thread = std::thread{[&worker]{ worker.run(); }};
+        m_thread = std::thread{[&worker] { worker.run(); }};
         m_worker = &worker;
     }
 
@@ -247,28 +277,33 @@ private:
 class Processor : public Worker
 {
 public:
-    explicit
-    Processor(const std::size_t index,
-              const AsyncConfig& config,
-              TaskQueue& completed,
-              const std::atomic<bool>& active)
+    explicit Processor(const std::size_t index,
+                       const AsyncConfig& config,
+                       TaskQueue& completed,
+                       const std::atomic<bool>& active)
         : m_config{config}
         , m_completed{completed}
         , m_active{active}
         , m_index{index}
-        , m_scheduled{make_task_queue(m_config.queue_type, m_done, m_config.spin_config.spin_lock_yields, m_active, m_config.spin_config.processor_sleep_interval)}
+        , m_scheduled{
+              make_task_queue(m_config.queue_type,
+                              m_done,
+                              m_config.spin_config.spin_lock_yields,
+                              m_active,
+                              m_config.spin_config.processor_sleep_interval)}
     {
         m_thread.start(*this);
     }
 
-    void push(ITask* const task)
+    void
+    push(ITask* const task)
     {
         m_scheduled->push(task);
     }
 
 private:
-
-    void run() override
+    void
+    run() override
     {
         if (m_config.on_processor_thread_started)
         {
@@ -285,7 +320,8 @@ private:
         }
     }
 
-    void shutdown() override
+    void
+    shutdown() override
     {
         m_done = true;
         m_scheduled->shutdown();
@@ -300,16 +336,22 @@ private:
     Thread m_thread;
 };
 
-}
+} // namespace
 
 struct Async::Impl : public Worker
 {
-    explicit
-    Impl(const std::size_t n_threads, AsyncConfig config)
+    explicit Impl(const std::size_t n_threads, AsyncConfig config)
         : m_config{std::move(config)}
         , m_active{m_config.spin_config.active}
-        , m_completed{make_task_queue(m_config.queue_type, m_done, m_config.spin_config.spin_lock_yields, m_active, m_config.spin_config.scheduler_sleep_interval)}
-        , m_randgen{m_config.scheduler_random_seed > 0 ? m_config.scheduler_random_seed : std::random_device{}()}
+        , m_completed{make_task_queue(
+              m_config.queue_type,
+              m_done,
+              m_config.spin_config.spin_lock_yields,
+              m_active,
+              m_config.spin_config.scheduler_sleep_interval)}
+        , m_randgen{m_config.scheduler_random_seed > 0
+                        ? m_config.scheduler_random_seed
+                        : std::random_device{}()}
     {
         if (n_threads == 0)
         {
@@ -319,39 +361,46 @@ struct Async::Impl : public Worker
         m_processors.reserve(n_threads);
         for (std::size_t i = 0; i < n_threads; ++i)
         {
-            m_processors.emplace_back(std::make_unique<Processor>(i, m_config, *m_completed, m_active));
+            m_processors.emplace_back(std::make_unique<Processor>(
+                i, m_config, *m_completed, m_active));
         }
     }
 
-    void set_active(const bool active)
+    void
+    set_active(const bool active)
     {
         m_active = active;
     }
 
-    std::size_t n_threads() const
+    std::size_t
+    n_threads() const
     {
         return m_processors.size();
     }
 
-    void execute(ITask& task)
+    void
+    execute(ITask& task)
     {
         GCL_ASSERT(n_threads() > 0);
         std::size_t index;
-        if (task.thread_affinity() >= 0 && static_cast<std::size_t>(task.thread_affinity()) < m_processors.size())
+        if (task.thread_affinity() >= 0 &&
+            static_cast<std::size_t>(task.thread_affinity()) <
+                m_processors.size())
         {
             index = static_cast<std::size_t>(task.thread_affinity());
         }
         else
         {
-            std::uniform_int_distribution<std::size_t> dist{0u, m_processors.size() - 1u};
+            std::uniform_int_distribution<std::size_t> dist{
+                0u, m_processors.size() - 1u};
             index = dist(m_randgen);
         }
         m_processors[index]->push(&task);
     }
 
 private:
-
-    void run() override
+    void
+    run() override
     {
         if (m_config.on_scheduler_thread_started)
         {
@@ -361,12 +410,14 @@ private:
         {
             while (const auto task = m_completed->pop())
             {
-                task->set_finished();
-                for (const auto child : task->children())
+                if (task->set_finished())
                 {
-                    if (child->set_parent_finished())
+                    for (const auto child : task->children())
                     {
-                        execute(*child);
+                        if (child->set_parent_finished())
+                        {
+                            execute(*child);
+                        }
                     }
                 }
             }
@@ -374,7 +425,8 @@ private:
         }
     }
 
-    void shutdown() override
+    void
+    shutdown() override
     {
         m_active = true;
         m_done = true;
@@ -392,23 +444,27 @@ private:
 
 Async::Async(const std::size_t n_threads, AsyncConfig config)
     : m_impl{std::make_unique<Impl>(n_threads, std::move(config))}
-{}
+{
+}
 
 Async::~Async() = default;
 
-void Async::set_active(const bool active)
+void
+Async::set_active(const bool active)
 {
     m_impl->set_active(active);
 }
 
-std::size_t Async::n_threads() const
+std::size_t
+Async::n_threads() const
 {
     return m_impl->n_threads();
 }
 
-void Async::execute(ITask& task)
+void
+Async::execute(ITask& task)
 {
     m_impl->execute(task);
 }
 
-} // gcl
+} // namespace gcl
