@@ -779,7 +779,7 @@ public:
     ChannelElement&
     operator=(const ChannelElement&) = delete;
 
-    ChannelElement(ChannelElement&& other) = default;
+    ChannelElement(ChannelElement&&) noexcept = default;
     ChannelElement&
     operator=(ChannelElement&&) = delete;
 
