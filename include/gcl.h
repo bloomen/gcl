@@ -110,6 +110,15 @@ public:
     // Spawns a scheduler thread and `n_threads` processor threads.
     // Will run tasks on the current thread if `n_threads` == 0
     explicit Async(std::size_t n_threads = 0, gcl::AsyncConfig config = {});
+
+    Async(const Async&) = delete;
+    Async&
+    operator=(const Async&) = delete;
+
+    Async(Async&&) noexcept = default;
+    Async&
+    operator=(Async&&) noexcept = default;
+
     ~Async();
 
     void
