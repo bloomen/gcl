@@ -9,10 +9,9 @@ if(gcl_enable_asan AND gcl_enable_tsan)
     message(FATAL_ERROR "gcl_enable_asan and gcl_enable_tsan cannot both be ON")
 endif()
 
-set(CMAKE_CXX_STANDARD 14)
-set(CMAKE_CXX_EXTENSIONS OFF)
-
 function(gcl_add_flags target)
+    set_property(TARGET ${target} PROPERTY CXX_STANDARD 14)
+    set_property(TARGET ${target} PROPERTY CXX_EXTENSIONS OFF)
     target_include_directories(${target} PRIVATE include)
     if(MSVC)
         target_compile_options(${target} PRIVATE /W4 /bigobj /EHsc /wd4503 /wd4996 /wd4702 /wd4100 /wd4706)
