@@ -3,10 +3,13 @@ project(gcl)
 
 option(gcl_build_tests "Build gcl tests." OFF)
 
+set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
 if (MSVC)
-    add_compile_options(/std:c++14 /W4 /bigobj /EHsc /wd4503 /wd4996 /wd4702 /wd4100 /wd4706)
+    add_compile_options(/W4 /bigobj /EHsc /wd4503 /wd4996 /wd4702 /wd4100 /wd4706)
 else()
-    add_compile_options(-std=c++14 -pedantic -Wall -Wextra -Wconversion)
+    add_compile_options(-Wall -Wconversion -Wextra -Wpedantic)
     if (CMAKE_COMPILER_IS_GNUCC)
         add_compile_options(-pthread)
     endif()
