@@ -384,7 +384,9 @@ void
 for_each_impl(const F& f, const gcl::Vec<Result>& ts, Tasks&&... tasks)
 {
     for (const gcl::Task<Result>& t : ts)
+    {
         f(t);
+    }
     for_each_impl(f, std::forward<Tasks>(tasks)...);
 }
 
@@ -393,7 +395,9 @@ void
 for_each_impl(const F& f, gcl::Vec<Result>&& ts, Tasks&&... tasks)
 {
     for (gcl::Task<Result>&& t : ts)
+    {
         f(std::move(t));
+    }
     for_each_impl(f, std::forward<Tasks>(tasks)...);
 }
 
@@ -1281,7 +1285,10 @@ when(const gcl::Tie<Tasks...>& tie)
 {
     return tie.then([](auto&&... ts) {
         gcl::detail::for_each(
-            [](auto&& t) { std::forward<decltype(t)>(t).get(); },
+            [](auto&& t) {
+                t.wait();
+                std::forward<decltype(t)>(t).get();
+            },
             std::forward<decltype(ts)>(ts)...);
     });
 }
@@ -1293,7 +1300,10 @@ when(gcl::Tie<Tasks...>&& tie)
 {
     return std::move(tie).then([](auto&&... ts) {
         gcl::detail::for_each(
-            [](auto&& t) { std::forward<decltype(t)>(t).get(); },
+            [](auto&& t) {
+                t.wait();
+                std::forward<decltype(t)>(t).get();
+            },
             std::forward<decltype(ts)>(ts)...);
     });
 }
