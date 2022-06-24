@@ -19,4 +19,15 @@ jobs:
         run: ./test.sh Debug
       - name: run release
         run: ./test.sh Release
-
+  build-on-windows:
+    runs-on: windows-latest
+    steps:
+      - name: checkout repo
+        uses: actions/checkout@v2
+      - name: use msvc
+        uses: ilammy/msvc-dev-cmd@v1
+      - name: run debug
+        run: |
+          cmake -DCMAKE_BUILD_TYPE=Debug -Dgcl_build_tests=ON .
+          cmake --build .
+          ctest --verbose
