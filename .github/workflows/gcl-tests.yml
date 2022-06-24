@@ -1,33 +1,28 @@
-name: gcl tests
+name: gcl
 on: [push]
 jobs:
-  build-on-linux:
-    runs-on: ubuntu-latest
-    steps:
-      - name: checkout repo
-        uses: actions/checkout@v2
-      - name: run debug
-        run: ./test.sh Debug
-      - name: run release
-        run: ./test.sh Release
-  build-on-mac:
-    runs-on: macos-11
-    steps:
-      - name: checkout repo
-        uses: actions/checkout@v2
-      - name: run debug
-        run: ./test.sh Debug
-      - name: run release
-        run: ./test.sh Release
-  build-on-windows:
-    runs-on: windows-latest
+  tests:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-11, windows-latest]
+        config: [Debug, Release]
+        asan: [ON, OFF]
+        tsan: [ON, OFF]
+        exclude:
+          - asan: ON
+            tsan: ON
+          - asan: ON
+            os: windows-latest
+          - tsan: ON
+            os: windows-latest
+    runs-on: ${{ matrix.os }}
     steps:
       - name: checkout repo
         uses: actions/checkout@v2
       - name: use msvc
         uses: ilammy/msvc-dev-cmd@v1
-      - name: run debug
+      - name: run tests
         run: |
-          cmake -DCMAKE_BUILD_TYPE=Debug -Dgcl_build_tests=ON .
-          cmake --build .
+          cmake -DCMAKE_BUILD_TYPE=${{ matrix.config }} -Dgcl_build_tests=ON -Dgcl_enable_asan=${{ matrix.asan }} -Dgcl_enable_tsan=${{ matrix.tsan }} .
+          cmake --build . -j 4
           ctest --verbose
