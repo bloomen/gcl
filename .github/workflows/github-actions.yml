@@ -6,6 +6,8 @@ jobs:
     steps:
       - name: checkout repo
         uses: actions/checkout@v2
-      - run: ./test.sh Debug
-      - run: ./test.sh Release
+      - name: run debug
+        run: ./test.sh Debug
+      - name: run release
+        run: ./test.sh Release
 
