@@ -1,8 +1,17 @@
 name: gcl tests
 on: [push]
 jobs:
-  build:
+  build-on-linux:
     runs-on: ubuntu-latest
+    steps:
+      - name: checkout repo
+        uses: actions/checkout@v2
+      - name: run debug
+        run: ./test.sh Debug
+      - name: run release
+        run: ./test.sh Release
+  build-on-mac:
+    runs-on: macos-11
     steps:
       - name: checkout repo
         uses: actions/checkout@v2
