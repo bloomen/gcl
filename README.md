@@ -1,6 +1,6 @@
 # gcl
 
-![Actions](https://github.com/bloomen/gcl/actions/workflows/github-actions.yml/badge.svg?branch=master) [![Appveyor](https://ci.appveyor.com/api/projects/status/memx407sve38sbj0?svg=true)](https://ci.appveyor.com/project/bloomen/gcl?branch=master)
+[![Actions](https://github.com/bloomen/gcl/actions/workflows/gcl-tests.yml/badge.svg?branch=master)](https://github.com/bloomen/gcl/actions/workflows/gcl-tests.yml?query=branch%3Amaster) [![Appveyor](https://ci.appveyor.com/api/projects/status/memx407sve38sbj0?svg=true)](https://ci.appveyor.com/project/bloomen/gcl?branch=master)
 
 A tiny **g**raph **c**oncurrent **l**ibrary for C++ that allows you to build a computational
 graph with a minimal interface and a small memory footprint.
