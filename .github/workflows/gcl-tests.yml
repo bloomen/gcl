@@ -2,26 +2,50 @@ name: gcl-tests
 on: [push]
 jobs:
   build-on-linux:
+    strategy:
+      matrix:
+        config:
+          - Debug
+          - Release
+        asan:
+          - ON
+          - OFF
     runs-on: ubuntu-latest
     steps:
       - name: checkout repo
         uses: actions/checkout@v2
       - name: run debug
         run: |
-          cmake -DCMAKE_BUILD_TYPE=Debug -Dgcl_build_tests=ON .
+          cmake -DCMAKE_BUILD_TYPE=${{ matrix.config }} -Dgcl_build_tests=ON -Dgcl_enable_asan=${{ matrix.asan }} .
           cmake --build . -j 4
           ctest --verbose
   build-on-mac:
+    strategy:
+      matrix:
+        config:
+          - Debug
+          - Release
+        asan:
+          - ON
+          - OFF
     runs-on: macos-11
     steps:
       - name: checkout repo
         uses: actions/checkout@v2
       - name: run debug
         run: |
-          cmake -DCMAKE_BUILD_TYPE=Debug -Dgcl_build_tests=ON .
+          cmake -DCMAKE_BUILD_TYPE=${{ matrix.config }} -Dgcl_build_tests=ON -Dgcl_enable_asan=${{ matrix.asan }} .
           cmake --build . -j 4
           ctest --verbose
   build-on-windows:
+    strategy:
+      matrix:
+        config:
+          - Debug
+          - Release
+        asan:
+          - ON
+          - OFF
     runs-on: windows-latest
     steps:
       - name: checkout repo
@@ -30,6 +54,6 @@ jobs:
         uses: ilammy/msvc-dev-cmd@v1
       - name: run debug
         run: |
-          cmake -DCMAKE_BUILD_TYPE=Debug -Dgcl_build_tests=ON .
+          cmake -DCMAKE_BUILD_TYPE=${{ matrix.config }} -Dgcl_build_tests=ON -Dgcl_enable_asan=${{ matrix.asan }} .
           cmake --build . -j 4
           ctest --verbose
