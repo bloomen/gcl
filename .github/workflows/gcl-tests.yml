@@ -11,6 +11,8 @@ jobs:
         exclude:
           - asan: ON
             tsan: ON
+          - asan: ON
+            os: windows-latest
           - tsan: ON
             os: windows-latest
     runs-on: ${{ matrix.os }}
