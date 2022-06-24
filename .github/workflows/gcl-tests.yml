@@ -1,4 +1,4 @@
-name: gcl tests
+name: gcl-tests
 on: [push]
 jobs:
   build-on-linux:
@@ -7,18 +7,20 @@ jobs:
       - name: checkout repo
         uses: actions/checkout@v2
       - name: run debug
-        run: ./test.sh Debug
-      - name: run release
-        run: ./test.sh Release
+        run: |
+          cmake -DCMAKE_BUILD_TYPE=Debug -Dgcl_build_tests=ON .
+          cmake --build . -j 4
+          ctest --verbose
   build-on-mac:
     runs-on: macos-11
     steps:
       - name: checkout repo
         uses: actions/checkout@v2
       - name: run debug
-        run: ./test.sh Debug
-      - name: run release
-        run: ./test.sh Release
+        run: |
+          cmake -DCMAKE_BUILD_TYPE=Debug -Dgcl_build_tests=ON .
+          cmake --build . -j 4
+          ctest --verbose
   build-on-windows:
     runs-on: windows-latest
     steps:
@@ -29,5 +31,5 @@ jobs:
       - name: run debug
         run: |
           cmake -DCMAKE_BUILD_TYPE=Debug -Dgcl_build_tests=ON .
-          cmake --build .
+          cmake --build . -j 4
           ctest --verbose
