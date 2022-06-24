@@ -1,9 +1,11 @@
-name: GitHub Actions Demo
+name: gcl tests
 on: [push]
 jobs:
   Explore-GitHub-Actions:
     runs-on: ubuntu-latest
     steps:
+      - name: checkout repo
+        uses: actions/checkout@v2
       - run: ./test.sh Debug
       - run: ./test.sh Release
 
