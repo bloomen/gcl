@@ -70,7 +70,7 @@ public:
 
     virtual void
     execute(ITask& root) = 0; // only called with tasks at the top of the graph
-                              // (no parents)
+                              // (no parents) and only when n_threads > 0.
 };
 
 // Config struct for the Async class
