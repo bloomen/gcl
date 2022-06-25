@@ -69,7 +69,7 @@ public:
     n_threads() const = 0;
 
     virtual void
-    execute(ITask& root) = 0; // only called with tasks at the top of the graph
+    execute(ITask& root) = 0; // Only called with tasks at the top of the graph
                               // (no parents) and only when n_threads > 0.
 };
 
@@ -109,7 +109,6 @@ class Async : public Exec
 {
 public:
     // Spawns a scheduler thread and `n_threads` processor threads.
-    // Will run tasks on the current thread if `n_threads` == 0
     explicit Async(std::size_t n_threads = 0, gcl::AsyncConfig config = {});
 
     Async(const Async&) = delete;
