@@ -69,7 +69,8 @@ public:
     n_threads() const = 0;
 
     virtual void
-    execute(ITask& task) = 0;
+    execute(ITask& root) = 0; // only called with tasks at the top of the graph
+                              // (no parents)
 };
 
 // Config struct for the Async class
@@ -128,7 +129,7 @@ public:
     n_threads() const override;
 
     void
-    execute(ITask& task) override;
+    execute(ITask& root) override;
 
 private:
     struct Impl;

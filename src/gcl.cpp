@@ -379,15 +379,15 @@ struct Async::Impl : public Worker
     }
 
     void
-    execute(ITask& task)
+    execute(ITask& root)
     {
         GCL_ASSERT(n_threads() > 0);
         std::size_t index;
-        if (task.thread_affinity() >= 0 &&
-            static_cast<std::size_t>(task.thread_affinity()) <
+        if (root.thread_affinity() >= 0 &&
+            static_cast<std::size_t>(root.thread_affinity()) <
                 m_processors.size())
         {
-            index = static_cast<std::size_t>(task.thread_affinity());
+            index = static_cast<std::size_t>(root.thread_affinity());
         }
         else
         {
@@ -395,7 +395,7 @@ struct Async::Impl : public Worker
                 0u, m_processors.size() - 1u};
             index = dist(m_randgen);
         }
-        m_processors[index]->push(&task);
+        m_processors[index]->push(&root);
     }
 
 private:
@@ -462,9 +462,9 @@ Async::n_threads() const
 }
 
 void
-Async::execute(ITask& task)
+Async::execute(ITask& root)
 {
-    m_impl->execute(task);
+    m_impl->execute(root);
 }
 
 } // namespace gcl
