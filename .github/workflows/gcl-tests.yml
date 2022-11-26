@@ -26,3 +26,7 @@ jobs:
           cmake -DCMAKE_BUILD_TYPE=${{ matrix.config }} -Dgcl_build_tests=ON -Dgcl_enable_asan=${{ matrix.asan }} -Dgcl_enable_tsan=${{ matrix.tsan }} .
           cmake --build . -j 4
           ctest --verbose
+      - name: conan create
+        run: |
+          pip3 install conan
+          conan create . -s build_type=${{ matrix.config }}
