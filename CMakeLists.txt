@@ -47,7 +47,7 @@ install(TARGETS gcl ARCHIVE DESTINATION lib LIBRARY DESTINATION lib PUBLIC_HEADE
 
 if(gcl_build_tests)
     enable_testing()
-    add_executable(gcl_test include/gcl.h test/catch.hpp test/test.cpp)
+    add_executable(gcl_test include/gcl.h test/catch_amalgamated.hpp test/catch_amalgamated.cpp test/test.cpp)
     gcl_add_flags(gcl_test)
     target_link_libraries(gcl_test gcl)
     add_test(gcl_test gcl_test --use-colour no)
