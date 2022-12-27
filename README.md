@@ -2,8 +2,8 @@
 
 [![Actions](https://github.com/bloomen/gcl/actions/workflows/gcl-tests.yml/badge.svg?branch=master)](https://github.com/bloomen/gcl/actions/workflows/gcl-tests.yml?query=branch%3Amaster)
 
-A **g**raph **c**oncurrent **l**ibrary for C++ that allows you to build a computational
-graph with an efficient interface and a small memory footprint.
+A **g**raph **c**oncurrent **l**ibrary for C++ that allows you to build a
+computational graph with an efficient interface and a small memory footprint.
 Requires a C++14 compliant compiler. Tested with Clang, GCC, and Visual Studio.
 
 Sample usage:
