@@ -11,6 +11,10 @@
 //  This file is an amalgamation of multiple different files.
 //  You probably shouldn't edit it directly.
 //  ----------------------------------------------------------
+#if __clang__ || __GNUC__
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wconversion"
+#endif
 
 #include "catch_amalgamated.hpp"
 
@@ -10514,4 +10518,8 @@ namespace Catch {
 
 #if defined(_MSC_VER)
 #pragma warning(pop)
+#endif
+
+#if __clang__ || __GNUC__
+#pragma GCC diagnostic pop
 #endif

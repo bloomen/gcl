@@ -467,4 +467,26 @@ Async::execute(ITask& root)
     m_impl->execute(root);
 }
 
+std::string
+to_dot(const std::vector<Edge>& edges, const Meta::Map& meta_map)
+{
+    auto str = [&meta_map](const auto& id) {
+        std::string task = "\"" + std::to_string(id);
+        auto meta = meta_map.find(id);
+        if (meta != meta_map.end())
+        {
+            task += "\n" + meta->second.name;
+        }
+        task += "\"";
+        return task;
+    };
+    std::string dot = "digraph {\n";
+    for (const auto& edge : edges)
+    {
+        dot += str(edge.parent) + " -> " + str(edge.child) + "\n";
+    }
+    dot += "}";
+    return dot;
+}
+
 } // namespace gcl

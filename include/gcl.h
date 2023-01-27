@@ -14,6 +14,7 @@
 #include <queue>
 #include <thread>
 #include <tuple>
+#include <unordered_map>
 #include <vector>
 
 #ifndef GCL_ASSERT
@@ -144,6 +145,18 @@ struct Edge
     gcl::TaskId parent;
     gcl::TaskId child;
 };
+
+// A task's meta data
+struct Meta
+{
+    using Map = std::unordered_map<gcl::TaskId, Meta>;
+    std::string name;
+};
+
+// Generates a description of the graph in dot format
+std::string
+to_dot(const std::vector<gcl::Edge>& edges,
+       const gcl::Meta::Map& meta_map = {});
 
 namespace detail
 {

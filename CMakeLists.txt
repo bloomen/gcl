@@ -4,6 +4,7 @@ project(gcl)
 option(gcl_build_tests "Build gcl tests." OFF)
 option(gcl_enable_asan "Build gcl with address sanitizer." OFF)
 option(gcl_enable_tsan "Build gcl with thread sanitizer." OFF)
+option(gcl_enable_coverage "Build gcl with coverage reporting." OFF)
 
 if(gcl_enable_asan AND gcl_enable_tsan)
     message(FATAL_ERROR "gcl_enable_asan and gcl_enable_tsan cannot both be ON")
@@ -27,12 +28,21 @@ function(gcl_add_flags target)
             target_compile_options(${target} PRIVATE -pthread)
         endif()
         if(gcl_enable_asan)
-            target_compile_options(${target} PRIVATE -fsanitize=address)
-            set_target_properties(${target} PROPERTIES LINK_FLAGS "-fsanitize=address")
+            if(APPLE)
+                target_compile_options(${target} PRIVATE -fsanitize=address,undefined)
+                set_target_properties(${target} PROPERTIES LINK_FLAGS "-fsanitize=address,undefined")
+            else()
+                target_compile_options(${target} PRIVATE -fsanitize=address,leak,undefined)
+                set_target_properties(${target} PROPERTIES LINK_FLAGS "-fsanitize=address,leak,undefined")
+            endif()
         endif()
         if(gcl_enable_tsan)
             target_compile_options(${target} PRIVATE -fsanitize=thread)
             set_target_properties(${target} PROPERTIES LINK_FLAGS "-fsanitize=thread")
+        endif()
+        if(gcl_enable_coverage)
+            target_compile_options(${target} PRIVATE --coverage)
+            set_target_properties(${target} PROPERTIES LINK_FLAGS "--coverage")
         endif()
     endif()
 endfunction()
@@ -52,3 +62,16 @@ if(gcl_build_tests)
     target_link_libraries(gcl_test gcl)
     add_test(gcl_test gcl_test)
 endif()
+
+set(gcl_source_files
+    ${PROJECT_SOURCE_DIR}/include/gcl.h
+    ${PROJECT_SOURCE_DIR}/src/gcl.cpp
+    ${PROJECT_SOURCE_DIR}/test/test.cpp)
+
+add_custom_target(
+    gcl_format
+    COMMAND clang-format
+    -style=file
+    -i
+    ${gcl_source_files}
+)
