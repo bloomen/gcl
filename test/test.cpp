@@ -611,17 +611,41 @@ TEST_CASE("schedule_with_thread_callbacks")
     auto t = gcl::tie(p1, p2).then(
         [](auto p1, auto p2) { return *p1.get() + *p2.get(); });
     gcl::AsyncConfig config;
-    int scheduler = 0;
-    int processor = 0;
+    std::atomic<int> scheduler{0};
+    std::atomic<int> processor{0};
     config.on_scheduler_thread_started = [&scheduler] { ++scheduler; };
     config.on_processor_thread_started = [&processor](const std::size_t index) {
         ++processor;
-        REQUIRE(index < 4);
+        assert(index < 4);
     };
     gcl::Async async{4, config};
     REQUIRE(t.schedule_all(async));
-    REQUIRE(1 == scheduler);
-    REQUIRE(4 == processor);
+    REQUIRE(1 == scheduler.load());
+    REQUIRE(4 == processor.load());
     t.wait();
     REQUIRE(55 == *t.get());
+}
+
+TEST_CASE("schedule_with_exception_with_int_return")
+{
+    auto t = gcl::task([]() -> int { throw std::runtime_error{"booh"}; });
+    REQUIRE(!t.get());
+    REQUIRE(t.schedule_all());
+    REQUIRE_THROWS_AS(*t.get(), std::runtime_error);
+}
+
+TEST_CASE("schedule_with_exception_with_int&_return")
+{
+    auto t = gcl::task([]() -> int& { throw std::runtime_error{"booh"}; });
+    REQUIRE(!t.get());
+    REQUIRE(t.schedule_all());
+    REQUIRE_THROWS_AS(*t.get(), std::runtime_error);
+}
+
+TEST_CASE("schedule_with_exception_with_void_return")
+{
+    auto t = gcl::task([]() { throw std::runtime_error{"booh"}; });
+    REQUIRE(!t.get());
+    REQUIRE(t.schedule_all());
+    REQUIRE_THROWS_AS(t.get(), std::runtime_error);
 }
