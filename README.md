@@ -25,3 +25,11 @@ int main() {
     std::ofstream{"example.dot"} << gcl::to_dot(t3.edges(), meta); // output in dot notation
 }
 ```
+
+The resulting graph looks like this:
+
+![graph](https://raw.githubusercontent.com/bloomen/gcl/master/test/example.png)
+
+A bubble represents a task and each arrow is an edge between two tasks.
+The first line within a bubble is the unique task ID, followed by the task name,
+and finally the task instance number.
