@@ -467,15 +467,35 @@ Async::execute(ITask& root)
     m_impl->execute(root);
 }
 
-std::string
-to_dot(const std::vector<Edge>& edges, const Meta::Map& meta_map)
+void
+MetaData::add(gcl::TaskId id, std::string name)
 {
-    auto str = [&meta_map](const auto& id) {
+    m_map.emplace(id, TaskData{m_counter++, std::move(name)});
+}
+
+const MetaData::TaskData*
+MetaData::get(gcl::TaskId id) const
+{
+    auto pair = m_map.find(id);
+    if (pair == m_map.end())
+    {
+        return nullptr;
+    }
+    return &pair->second;
+}
+
+std::string
+to_dot(const std::vector<Edge>& edges, const MetaData& meta)
+{
+    auto str = [&meta](const auto& id) {
         std::string task = "\"" + std::to_string(id);
-        auto meta = meta_map.find(id);
-        if (meta != meta_map.end())
+        if (auto data = meta.get(id))
         {
-            task += "\n" + meta->second.name;
+            if (!data->name.empty())
+            {
+                task += "\n" + data->name;
+            }
+            task += "\n" + std::to_string(data->instance_no);
         }
         task += "\"";
         return task;

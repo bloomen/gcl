@@ -22,6 +22,24 @@ operator==(const Edge& lhs, const Edge& rhs)
 
 } // namespace gcl
 
+namespace
+{
+
+bool
+contains(const std::string& str, const char* token)
+{
+    return str.find(token) != std::string::npos;
+}
+
+template <typename T>
+bool
+contains(const std::string& str, const T& token)
+{
+    return str.find(std::to_string(token)) != std::string::npos;
+}
+
+} // namespace
+
 void
 test_schedule(const std::size_t n_threads)
 {
@@ -511,4 +529,32 @@ TEST_CASE("schedule_with_thread_affinity")
     REQUIRE(t.schedule_all(async));
     t.wait();
     REQUIRE(55 == *t.get());
+}
+
+TEST_CASE("to_dot_without_meta")
+{
+    auto p1 = gcl::task([] { return 42; });
+    auto p2 = gcl::task([] { return 13; });
+    auto t = gcl::tie(p1, p2).then(
+        [](auto p1, auto p2) { return *p1.get() + *p2.get(); });
+    const auto dot = gcl::to_dot(t.edges());
+    REQUIRE(contains(dot, p1.id()));
+    REQUIRE(contains(dot, p2.id()));
+    REQUIRE(contains(dot, t.id()));
+}
+
+TEST_CASE("to_dot_with_meta")
+{
+    gcl::MetaData meta;
+    auto p1 = gcl::task([] { return 42; }).md(meta, "parent1");
+    auto p2 = gcl::task([] { return 13; }).md(meta);
+    auto t = gcl::tie(p1, p2)
+                 .then([](auto p1, auto p2) { return *p1.get() + *p2.get(); })
+                 .md(meta, "child");
+    const auto dot = gcl::to_dot(t.edges(), meta);
+    REQUIRE(contains(dot, p1.id()));
+    REQUIRE(contains(dot, "parent1"));
+    REQUIRE(contains(dot, p2.id()));
+    REQUIRE(contains(dot, t.id()));
+    REQUIRE(contains(dot, "child"));
 }

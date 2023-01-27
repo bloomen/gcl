@@ -12,6 +12,7 @@
 #include <future>
 #include <memory>
 #include <queue>
+#include <string>
 #include <thread>
 #include <tuple>
 #include <unordered_map>
@@ -146,17 +147,30 @@ struct Edge
     gcl::TaskId child;
 };
 
-// A task's meta data
-struct Meta
+// A metadata store to collect graph info
+class MetaData
 {
-    using Map = std::unordered_map<gcl::TaskId, Meta>;
-    std::string name;
+public:
+    struct TaskData
+    {
+        std::size_t instance_no;
+        std::string name;
+    };
+
+    void
+    add(gcl::TaskId id, std::string name);
+
+    const TaskData*
+    get(gcl::TaskId id) const;
+
+private:
+    std::size_t m_counter = 0;
+    std::unordered_map<gcl::TaskId, TaskData> m_map;
 };
 
 // Generates a description of the graph in dot format
 std::string
-to_dot(const std::vector<gcl::Edge>& edges,
-       const gcl::Meta::Map& meta_map = {});
+to_dot(const std::vector<gcl::Edge>& edges, const gcl::MetaData& meta = {});
 
 namespace detail
 {
@@ -254,6 +268,11 @@ template <typename Result>
 class Task : public gcl::detail::BaseTask<Result>
 {
 public:
+    // Collects metadata for this task; currently instance counter and optional
+    // name
+    Task
+    md(gcl::MetaData& meta, std::string name = {}) const;
+
     // Returns the task's result if the task finished (has_result() == true),
     // null otherwise. Re-throws any exception thrown from running this task or
     // any of its parents.
@@ -279,6 +298,11 @@ template <typename Result>
 class Task<Result&> : public gcl::detail::BaseTask<Result&>
 {
 public:
+    // Collects metadata for this task; currently instance counter and optional
+    // name
+    Task
+    md(gcl::MetaData& meta, std::string name = {}) const;
+
     // Returns the task's result if the task finished (has_result() == true),
     // null otherwise. Re-throws any exception thrown from running this task or
     // any of its parents.
@@ -304,6 +328,11 @@ template <>
 class Task<void> : public gcl::detail::BaseTask<void>
 {
 public:
+    // Collects metadata for this task; currently instance counter and optional
+    // name
+    Task
+    md(gcl::MetaData& meta, std::string name = {}) const;
+
     // Returns true if the task finished (has_result() == true), false
     // otherwise. Re-throws any exception thrown from running this task or any
     // of its parents.
@@ -1177,6 +1206,14 @@ BaseTask<Result>::edges() const
 } // namespace detail
 
 template <typename Result>
+Task<Result>
+Task<Result>::md(gcl::MetaData& meta, std::string name) const
+{
+    meta.add(this->id(), std::move(name));
+    return *this;
+}
+
+template <typename Result>
 const Result*
 Task<Result>::get() const
 {
@@ -1195,6 +1232,14 @@ Task<Result>::get() const
 }
 
 template <typename Result>
+Task<Result&>
+Task<Result&>::md(gcl::MetaData& meta, std::string name) const
+{
+    meta.add(this->id(), std::move(name));
+    return *this;
+}
+
+template <typename Result>
 Result*
 Task<Result&>::get() const
 {
@@ -1210,6 +1255,13 @@ Task<Result&>::get() const
         }
     }
     return nullptr;
+}
+
+inline Task<void>
+Task<void>::md(gcl::MetaData& meta, std::string name) const
+{
+    meta.add(this->id(), std::move(name));
+    return *this;
 }
 
 inline bool
