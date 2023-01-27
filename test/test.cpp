@@ -620,12 +620,12 @@ TEST_CASE("schedule_with_thread_callbacks")
     };
     gcl::Async async{4, config};
     REQUIRE(t.schedule_all(async));
+    t.wait();
     REQUIRE(1 == scheduler.load());
     while (processor.load() < 4)
     {
         std::this_thread::yield();
     }
-    t.wait();
     REQUIRE(55 == *t.get());
     REQUIRE(4 == processor.load());
 }
