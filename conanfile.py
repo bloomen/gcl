@@ -3,7 +3,7 @@ from conan.tools.cmake import CMakeToolchain, CMake, cmake_layout
 
 class GclConan(ConanFile):
     name = "gcl"
-    version = "1.0.1"
+    version = "1.1.0"
     license = "MIT"
     url = "https://github.com/bloomen/gcl"
     description = "Conan package for bloomen/gcl."
