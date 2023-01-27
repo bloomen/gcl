@@ -134,13 +134,6 @@ public:
         m_cv.notify_one();
     }
 
-    std::size_t
-    size() const override
-    {
-        std::lock_guard<std::mutex> lock{m_mutex};
-        return TaskQueue::size();
-    }
-
     // multiple producer
     void
     push(ITask* const task) override

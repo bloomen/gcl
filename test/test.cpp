@@ -558,3 +558,70 @@ TEST_CASE("to_dot_with_meta")
     REQUIRE(contains(dot, t.id()));
     REQUIRE(contains(dot, "child"));
 }
+
+TEST_CASE("async_with_spin_queue_and_no_interval_sleep")
+{
+    auto p1 = gcl::task([] { return 42; });
+    auto p2 = gcl::task([] { return 13; });
+    auto t = gcl::tie(p1, p2).then(
+        [](auto p1, auto p2) { return *p1.get() + *p2.get(); });
+    gcl::AsyncConfig config;
+    config.queue_type = gcl::AsyncConfig::QueueType::Spin;
+    config.spin_config.processor_sleep_interval = std::chrono::microseconds{0};
+    gcl::Async async{4, config};
+    REQUIRE(t.schedule_all(async));
+    t.wait();
+    REQUIRE(55 == *t.get());
+}
+
+TEST_CASE("async_with_spin_queue_and_active")
+{
+    auto p1 = gcl::task([] { return 42; });
+    auto p2 = gcl::task([] { return 13; });
+    auto t = gcl::tie(p1, p2).then(
+        [](auto p1, auto p2) { return *p1.get() + *p2.get(); });
+    gcl::AsyncConfig config;
+    config.queue_type = gcl::AsyncConfig::QueueType::Spin;
+    gcl::Async async{4, config};
+    async.set_active(true);
+    REQUIRE(t.schedule_all(async));
+    t.wait();
+    REQUIRE(55 == *t.get());
+}
+
+TEST_CASE("async_with_spin_queue_and_yields")
+{
+    auto p1 = gcl::task([] { return 42; });
+    auto p2 = gcl::task([] { return 13; });
+    auto t = gcl::tie(p1, p2).then(
+        [](auto p1, auto p2) { return *p1.get() + *p2.get(); });
+    gcl::AsyncConfig config;
+    config.queue_type = gcl::AsyncConfig::QueueType::Spin;
+    config.spin_config.spin_lock_yields = true;
+    gcl::Async async{4, config};
+    REQUIRE(t.schedule_all(async));
+    t.wait();
+    REQUIRE(55 == *t.get());
+}
+
+TEST_CASE("schedule_with_thread_callbacks")
+{
+    auto p1 = gcl::task([] { return 42; });
+    auto p2 = gcl::task([] { return 13; });
+    auto t = gcl::tie(p1, p2).then(
+        [](auto p1, auto p2) { return *p1.get() + *p2.get(); });
+    gcl::AsyncConfig config;
+    int scheduler = 0;
+    int processor = 0;
+    config.on_scheduler_thread_started = [&scheduler] { ++scheduler; };
+    config.on_processor_thread_started = [&processor](const std::size_t index) {
+        ++processor;
+        REQUIRE(index < 4);
+    };
+    gcl::Async async{4, config};
+    REQUIRE(t.schedule_all(async));
+    REQUIRE(1 == scheduler);
+    REQUIRE(4 == processor);
+    t.wait();
+    REQUIRE(55 == *t.get());
+}
