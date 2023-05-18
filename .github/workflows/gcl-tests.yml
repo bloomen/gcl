@@ -32,5 +32,5 @@ jobs:
           ctest --verbose
       - name: conan create
         run: |
-          pip3 install conan
+          pip3 install conan==1.57.0
           conan create . -s build_type=${{ matrix.config }}
