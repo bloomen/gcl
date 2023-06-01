@@ -616,7 +616,10 @@ TEST_CASE("schedule_with_thread_callbacks")
     config.on_scheduler_thread_started = [&scheduler] { ++scheduler; };
     config.on_processor_thread_started = [&processor](const std::size_t index) {
         ++processor;
-        assert(index < 4);
+        if (index >= 4)
+        {
+            throw std::runtime_error{std::to_string(index)};
+        }
     };
     gcl::Async async{4, config};
     REQUIRE(t.schedule_all(async));
